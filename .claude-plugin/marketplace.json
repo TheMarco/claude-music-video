@@ -1,0 +1,14 @@
+{
+  "name": "music-video",
+  "description": "The music-video skill for Claude Code",
+  "owner": {
+    "name": "TheMarco"
+  },
+  "plugins": [
+    {
+      "name": "music-video-generator",
+      "source": "./plugins/music-video-generator",
+      "description": "Make complete music videos from a song, with footage you supply or find, and overlays designed for each video."
+    }
+  ]
+}
