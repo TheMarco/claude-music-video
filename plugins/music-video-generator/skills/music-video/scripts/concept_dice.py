@@ -9,17 +9,16 @@ element, an accent for the drops (a beat or two at most), a color move in the gr
 how cuts are marked, what the music drives, plus a wildcard rule. Use what serves the brief and the
 song, drop the rest. Entries whose key (the words before the colon) appear in the identity lines of the
 last three entries in ~/.claude/music-video/history.md are skipped (the file is created from
-assets/history_template.md if missing; MUSIC_VIDEO_HOME moves it), and the draws don't share entries.
+assets/history_template.md if missing), and the draws don't share entries.
 No dependencies; any Python 3 works.
 """
 import argparse
-import os
 import random
 import re
 import shutil
 from pathlib import Path
 
-HOME = Path(os.environ.get("MUSIC_VIDEO_HOME", "~/.claude/music-video")).expanduser()
+HOME = Path.home() / ".claude" / "music-video"
 HISTORY = HOME / "history.md"
 TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "history_template.md"
 

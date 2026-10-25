@@ -46,14 +46,15 @@ for your go before downloading, spending credits or rendering, proposes three co
 frames before the full render.
 
 Each project gets an `mv/` folder with the pipeline scripts, data, clips and renders. Your history of
-accepted videos lives in `~/.claude/music-video/` (set `MUSIC_VIDEO_HOME` to move it).
+accepted videos lives in `~/.claude/music-video/`.
 
 ## What it runs and where data goes
 
 Everything runs on your machine: Python scripts copied into each project, ffmpeg, and a GPU compositor.
+The plugin reads no API keys, tokens or logins.
 Network access:
-- archive.org: searching and downloading public-domain and openly licensed films (`ia_search.py`,
-  `ia_fetch.py`)
+- archive.org: searching and downloading public-domain and openly licensed films, anonymously
+  (`ia_search.py`, `ia_fetch.py`)
 - your video-generation MCP, only through its own tools: prompts, and the reference photos you choose
   to send it; finished clips are downloaded from the URLs it returns (`fetch_clip.py`)
 - Python packages from PyPI during setup, and the Whisper and background-removal models on first use

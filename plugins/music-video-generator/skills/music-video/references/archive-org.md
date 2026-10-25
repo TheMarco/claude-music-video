@@ -14,9 +14,10 @@ on any site are not free to use.
 
 ## Searching
 
-Use the `internetarchive` library's default session (`ia_search.py`, `ia_fetch.py`). archive.org's
-search returns 400 Bad Request when the User-Agent is custom; trying other User-Agents was blocked as
-bot-check circumvention, so don't.
+`ia_search.py` and `ia_fetch.py` use archive.org's public search, metadata and download URLs
+anonymously, with no account or credentials, and Python's standard HTTP client. Don't change the
+User-Agent or retry with other ones if archive.org refuses a request: that counts as getting around its
+bot checks.
 
 ```bash
 .venv/bin/python mv/scripts/ia_search.py 'title:("new york") AND collection:prelinger' 40

@@ -1,7 +1,7 @@
 {
   "name": "music-video-generator",
   "displayName": "Music Video Generator",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Make complete music videos from a song: beat-grid analysis, archive.org or your own footage, optional AI performer clips through any video MCP, and a GPU compositor with overlays designed fresh for every video.",
   "author": {
     "name": "Marco van Hylckama Vlieg"
