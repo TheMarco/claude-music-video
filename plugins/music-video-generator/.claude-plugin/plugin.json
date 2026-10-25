@@ -1,10 +1,11 @@
 {
   "name": "music-video-generator",
   "displayName": "Music Video Generator",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Make complete music videos from a song: beat-grid analysis, archive.org or your own footage, optional AI performer clips through any video MCP, and a GPU compositor with overlays designed fresh for every video.",
   "author": {
-    "name": "Marco van Hylckama Vlieg"
+    "name": "Marco van Hylckama Vlieg",
+    "url": "https://ai-created.com/"
   },
   "homepage": "https://github.com/TheMarco/claude-music-video",
   "repository": "https://github.com/TheMarco/claude-music-video",

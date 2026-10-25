@@ -67,3 +67,7 @@ Project files stay in the project folder; the history of accepted videos stays i
 You are responsible for the rights to everything in your video. The skill reads license fields on
 archive.org items and flags items that have none, and it puts source credits on the end card, but check
 anything you plan to release commercially.
+
+## Author
+
+Made by Marco van Hylckama Vlieg: [ai-created.com](https://ai-created.com/), [@AIandDesign](https://x.com/AIandDesign) on X.
