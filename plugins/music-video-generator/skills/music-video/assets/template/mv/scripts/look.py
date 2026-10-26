@@ -13,6 +13,8 @@ from timing import LETTERBOX, SHOCKS  # noqa: F401  (the analyzer's suggestions,
 # Gradient-map palettes: 5 color stops from shadows to highlights. A grade maps luminance through
 # one of these (palette index) and blends it with the original by gm (0 = untouched, 1 = full map).
 # Write this video's own maps; these two are only placeholders.
+# Colour follows the story, not the source film: one grade per chapter, changing at a story turn
+# (edl.py STORY_GRADES and AI_STORY_GRADES), so footage from different films reads as one place.
 PALETTES = [
     [(.02, .02, .025), (.16, .14, .13), (.50, .45, .40), (.86, .80, .70), (1., .97, .92)],  # 0 neutral film
     [(0., 0., 0.), (.12, .12, .12), (.45, .45, .45), (.85, .85, .85), (1., 1., 1.)],      # 1 black and white

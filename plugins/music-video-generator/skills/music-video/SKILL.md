@@ -15,7 +15,8 @@ ones.
 **Paths.** `$SKILL` below means this skill's base directory, which Claude Code shows when the skill
 loads. Set it in the shell before the first command (`SKILL="<base directory>"`). Per-user data lives in
 `~/.claude/music-video/`: `history.md` (created from `$SKILL/assets/history_template.md` on first use)
-and `refs/` (frame sheets of accepted videos).
+and `refs/` (frame sheets of accepted videos). If `~/.claude/music-video/local.md` exists, read it before
+Phase 0: it holds this user's own tools and standing preferences, and it wins over defaults here.
 
 The bundled template (`$SKILL/assets/template/mv/scripts/`) is a working pipeline. Copy it into each new
 project. Three files belong to the video and get written for it: `edl.py` (the cut), `look.py`
@@ -42,7 +43,7 @@ Every request uses the same pipeline; the request type decides which phases matt
 | Archive-only, or no budget | archive.org, the user's own footage | "Archive-only videos"; `references/compositor.md` |
 | Visualizer | procedural backgrounds, artist photos, a few archive textures | An audio-reactive picture built in `fx.py` from the spectrum, waveform and drum envelopes; no AI needed |
 | Lyric video | any backgrounds | Confirmed lyrics; line and word timings from `ov.lyric_at(t)`; a type treatment designed for the song |
-| Performance / lipsync | AI lipsync clips | `references/video-providers.md` "Lipsync"; `sync=` in the EDL; `sync_offset.py` |
+| Performance / lipsync | AI lipsync clips | `references/video-providers.md` "Lipsync": one take per sung line, shown only where it was recorded; `sync_offset.py --save`, `mouth_check.py`, `mv/data/mouths.json` |
 | Photo or album-art video | stills in `codes.json` | Slow zoom and pan per shot; grades; overlays between photos |
 | Vertical or square cut, teaser | an existing edit | `render.py --size 1080x1920` (matted shots reframe on the person); `--start/--end` for a 15-30 s hook |
 | The user's own footage | local files in `codes.json` | Same as archive; check framing with contact sheets |
@@ -90,7 +91,8 @@ Ask these in one plain message, each with your default, so the user can answer o
    10 s clips, 15 s for long dance takes.
 6. **Performers.** Reference photos, outfits, settings. Real people need the identity method in Phase 3.
 7. **Budget** in credits or money. Default: propose a number from the plan (see "Budget").
-8. **Story or mood piece.** Default: mood piece with a light arc.
+8. **Story or mood piece.** Default: a mood piece that still tells a story without words, in chapters
+   that follow the song's sections (Phase 4).
 9. **Text and graphics.** Default: decided by the concept; can be none at all.
 10. **Output.** Default: 1920x1080, 24 fps, H.264 + AAC. Vertical (1080x1920) or square cut needed?
 11. **Artist and title credit** exactly as they should appear. File tags are often wrong.
@@ -188,6 +190,11 @@ resolutions, audio, price), getting local reference photos to the provider, down
   test clip, put it next to the photo in `mv/review/`, and wait for the user's verdict.
 - **Masked or invented characters** (a robot, a mascot, a stylized character): make a keyframe still
   first (cheap), check it, then animate from it as the start frame.
+- **Inventory the angles first.** Contact-sheet the performer clips you have and list each one's angle
+  and size; spend credits on the missing angles (profile, from behind, overhead, low, wide), not on more
+  frontal close-ups. Name the angle and the move in every prompt.
+- **Lipsync:** one take per sung line, shown only at the song time it was recorded for; every other
+  shot of the singer keeps the mouth closed or out of view (`references/video-providers.md`, "Lipsync").
 - **Prompts:** describe the motion, camera move, light and atmosphere; turn generated audio off; no
   lipsync unless asked; frame people knees-up or closer so faces hold; for masked characters say the
   face is never shown. Write the concept's look into the prompts (light, color, era) so the clips are
@@ -209,17 +216,45 @@ labeled thumbnails and pick in-points. Black bars are cropped automatically; ove
 
 ## Phase 4: the edit
 
-Write the cut in the EDIT block of `mv/scripts/edl.py` as beat-aligned sections of shots (its docstring
-lists every shot option), then run `.venv/bin/python mv/scripts/edl.py`. It checks that sections tile
-the song, adds the black end-card tail, clamps in-points to each source, checks grade names against
-`look.py`, and prints the archive/AI split.
+**Plan the story first, even for a mood piece.** Before the EDL, write a chapter table: one row per
+song section with what happens, the footage pool, the shot sizes and the grade. Show it to the user
+with the plan. A made-up example for a song about leaving town at night:
+
+| Section | What happens | Footage | Sizes | Grade |
+|---|---|---|---|---|
+| intro | the town at dusk, lights coming on | B1, B4 | W, W, M | cold |
+| verse 1 | the same day again: clocks, queues, traffic | A2, A5 | M, C, W | cold |
+| chorus 1 | the road out of town | C1, C3, P1 | W, M, C | cold |
+| drop 1 | the night opens up: neon, speed | C2, P2, P3 | W, C, X | warm |
+| breakdown | stopped at the edge of the sea | D1, P4 | W, M | warm |
+| drop 2 | driving on, the town gone | C4, P5, P6 | W, M, C | warm |
+
+Each chapter uses its own footage, and no section interleaves every source: a video that rotates all
+its films shot by shot reads as a montage with no progression. Colour follows the story too: one grade
+per chapter, changing at a story turn (`STORY_GRADES` and `AI_STORY_GRADES` in `edl.py`), never from
+film to film. Tag shot sizes with `size="W"` (W, M, C, X), open each chapter wide, and avoid neighbours
+of the same size; varied angles and sizes are what make the footage feel shot rather than collected.
+
+Then write the cut in the EDIT block of `mv/scripts/edl.py` as beat-aligned sections of shots (its
+docstring lists every shot option), and run `.venv/bin/python mv/scripts/edl.py`. It checks that
+sections tile the song, adds the black end-card tail, clamps in-points to each source, checks grade
+names against `look.py`, prints the archive/AI split and a table of cuts, shot length and sources per
+song section, and warns about: footage reused (`motif=True` marks a deliberate repeat), look changes
+between consecutive archive shots that aren't at a story turn, an average shot length outside
+`PACE_BEATS`, sections with more than `MAX_SOURCES` sources, shot-size problems, and singer shots whose
+mouth may move off the lyrics. Fix each warning or know why it stands.
 
 Pace comes from the song. A 120-130 BPM dance track wants most shots between half a beat and two beats
 in the loud sections, longer in breakdowns, faster into drops: about 150-180 cuts in three and a half
-minutes. A ballad or a weak beat wants phrases. Few long takes in a fast song read as stuck. The
-concept adds devices on top (match cuts, repetition, freezes, ramps); decide them in Phase 5, then
-write the EDL. Whatever the grammar: interleave sources rather than blocking them, and save the most
-striking footage for the moments the song builds to.
+minutes, an average of 2-4 beats per shot. A ballad or a weak beat wants phrases (raise `PACE_BEATS`).
+Few long takes in a fast song read as stuck, and twice the cuts reads as noise. The concept adds devices
+on top (match cuts, repetition, freezes, ramps); decide them in Phase 5. Save the most striking footage
+for the moments the song builds to.
+
+**Check every shot before rendering.** `.venv/bin/python mv/scripts/contact.py mv/work/shots --edl`
+makes contact sheets of every shot at its midpoint, cropped as rendered, and prints a brightness report.
+Look at all of them: title cards, in-points on the wrong side of a cut, shots too dark to read. Shots
+flagged bright (mean luma above 0.42 or 90th percentile above 0.85) usually want `expo=0.6-0.8`.
 
 ## Phase 5: concept, look and signature overlays
 
@@ -239,6 +274,9 @@ is never traded for the second.
   there the picture itself is generated.)
 - **The picture moves with the music.** Cuts sit on the grid, energy follows the sections, and each drop
   lands visibly harder than what led into it (cut, light, color, motion or scale).
+- **It tells a story without words.** Chapters that follow the song, each with its own footage, angles
+  that change, and colour that turns when the story does (Phase 4). Footage chosen only for mood, mixed
+  from every source in every section, reads as disconnected however good each shot is.
 - **A finish with weight.** Start from the `STARTS` entry in `look.py` that matches the mood: real blacks
   for dark songs, grain, glow and halation where the mood is filmic or nocturnal. An empty finish with
   a pale grade reads flat.
@@ -261,8 +299,9 @@ lines returns unless the user asks.
 4. **Write three concepts**, three different identities inside the same brief. For each: one or two
    sentences on what a viewer sees and feels at the drop (light, color, what fills the frame, what
    moves); the look (palette, finish start); title and credits; type, or none; 3-6 signature overlays,
-   at least half new code, building toward the drop or last chorus; the edit's devices. Each overlay
-   says how much of the frame it covers and when: most of the time the footage is what you see.
+   at least half new code, building toward the drop or last chorus; the edit's devices; the story in
+   one line per chapter. Each overlay says how much of the frame it covers and when: most of the time
+   the footage is what you see.
    Sensation over conceit: a concept whose appeal is a clever mapping that needs explaining (the verses
    as chess moves, the song as a lecture) is a design idea, not a video idea. Drop it.
 5. **Test each concept** against the craft list above and the habits below; replace any that fails.
@@ -298,12 +337,15 @@ lines returns unless the user asks.
    - Check `sheet.py`'s tone readout. For a dark or moody brief, dark shots need real blacks (black
      share 0.25 or more); a pale, printed-looking picture sits around 0.05-0.15 on every shot.
    - Compare with frames from the last three videos in the history for repeated identity.
+   - The story test: from the still sheets alone, write one sentence per section saying what happens.
+     If you can't, the video is still a montage; rework the chapters before rendering.
 
 `references/compositor.md` documents the engine, the per-shot options and the fx.py hooks.
 
 ## Phase 6: preview, render, QC
 
 ```bash
+.venv/bin/python mv/scripts/contact.py mv/work/shots --edl                       # every shot + brightness
 .venv/bin/python mv/scripts/render.py mv/work/stills/s --stills 8,30,48,62,110,152,196
 .venv/bin/python mv/scripts/sheet.py mv/work/stills/s mv/work/stills/sheet
 .venv/bin/python mv/scripts/beatsheet.py mv/out/<name>_v1.mp4 mv/work/drop1.jpg <drop_time> 32   # one frame per beat

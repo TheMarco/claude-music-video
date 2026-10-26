@@ -1,11 +1,13 @@
 """Find where a clip's own audio sits in the song, for placing lipsync clips.
 
-Usage: .venv/bin/python mv/scripts/sync_offset.py CLIP.mp4 [--near SECONDS] [--song song.mp3] [--window 2.0]
+Usage: .venv/bin/python mv/scripts/sync_offset.py CLIP.mp4 [--near SECONDS] [--song song.mp3] [--window 2.0] [--save]
 Prints the song time where the clip's audio starts (use it as sync= in the EDL), then the same estimate
 for each 2 s window of the clip. Windows that disagree mean the mouth drifts there: start the cut later
 or nudge sync for that cut. --near is the song time of the slice you sent to the generator; songs repeat
 bars, so searching within 15 s of it avoids locking onto an identical bar elsewhere.
 Needs a clip generated with audio (e.g. Seedance with the song slice as reference and audio on).
+--save records the start as this take's "sync" in mv/data/mouths.json (keyed by the clip's file name),
+where edl.py and vocal_match.py read it: a singing take is shown only at the song time it was recorded for.
 """
 import argparse
 import json
@@ -24,6 +26,7 @@ ap.add_argument("clip")
 ap.add_argument("--near", type=float, default=None)
 ap.add_argument("--song", default=None)
 ap.add_argument("--window", type=float, default=2.0)
+ap.add_argument("--save", action="store_true", help="record the start in mv/data/mouths.json")
 args = ap.parse_args()
 song = args.song or json.loads(Path("mv/data/song.json").read_text())["song"]
 wav = subprocess.run(["ffmpeg", "-v", "error", "-i", args.clip, "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"],
@@ -64,3 +67,9 @@ n = int(args.window * SR / HOP)
 for k in range(0, FC.shape[1] - n + 1, n):
     t, cf = locate(FC[:, k:k + n])
     print(f"  clip {k * HOP / SR:5.1f}s -> song {t:8.3f}s  implies start {t - k * HOP / SR:8.3f}s  similarity {cf:.2f}")
+if args.save:
+    mfile = Path("mv/data/mouths.json")
+    mouths = json.loads(mfile.read_text()) if mfile.exists() else {}
+    mouths.setdefault(Path(args.clip).stem, {})["sync"] = round(start, 3)
+    mfile.write_text(json.dumps(mouths, indent=1))
+    print(f"saved sync {start:.3f} for {Path(args.clip).stem} in {mfile}")
