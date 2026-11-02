@@ -10,6 +10,11 @@ The picture is always your graded footage, full frame. Each video gets its own o
 designed for that song inside your brief, and a history file keeps later videos from repeating earlier
 ones.
 
+The compositor cuts on the beat grid and adds transitions (whip pans, zoom-throughs, matte cuts where
+the performer stays while the world changes, luma and burn reveals, defocus handoffs, or ones written
+for the video), speed ramps and loops, person-only motion trails, anamorphic streaks, kinetic type, and
+overlays pinned to things in the footage with a point tracker.
+
 ## Requirements
 
 - Claude Code
@@ -42,8 +47,9 @@ Or copy `plugins/music-video-generator/skills/music-video/` to `~/.claude/skills
 Start Claude Code in an empty folder with your song in it and ask for a music video ("make a music video
 for song.mp3, moody and nocturnal, archive footage only"). Installed as a plugin, the skill can also be
 run directly as `/music-video-generator:music-video`. It asks its brief questions in one message, waits
-for your go before downloading, spending credits or rendering, proposes three concepts, and shows still
-frames before the full render.
+for your go before downloading, spending credits or rendering, proposes three concepts with a still of
+each at the first drop, builds that drop before the rest of the video, has the stills checked by a
+fresh reviewer agent, and shows you still frames before the full render.
 
 Each project gets an `mv/` folder with the pipeline scripts, data, clips and renders. Your history of
 accepted videos lives in `~/.claude/music-video/`.

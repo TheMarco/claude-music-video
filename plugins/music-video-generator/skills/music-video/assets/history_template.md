@@ -13,6 +13,11 @@ entries.
 
 (Directions the user rejected outright, with their reasons, so later concepts steer clear.)
 
+### Concepts not chosen
+
+(Concepts proposed for a video but not picked, one line each: the song, the drop sentence and the
+signature overlays. They were never made, so a later video may use them.)
+
 <!-- Entry format, newest at the top:
 
 ## Title (Artist), Month Year

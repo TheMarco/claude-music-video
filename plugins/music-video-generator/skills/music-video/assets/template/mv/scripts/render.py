@@ -2,24 +2,30 @@
 
 Usage:
   .venv/bin/python mv/scripts/render.py OUT.mp4 [--size 1920x1080] [--start S] [--end E] [--stills T1,T2,...]
+                                        [--variant A]
   --size 1080x1920 (vertical), 1080x1080 or 1080x1350 for social cuts: sources stay 16:9 and the frame
   shows the middle of them; shots with a person matte are reframed on the person automatically, and
   pan=((x, 0), (x, 0)) in the EDL reframes any other shot. Letterbox is skipped for non-wide output.
 
 Reads mv/data/edl.json (built by mv/scripts/edl.py), mv/data/song.json (via timing.py) and
 mv/data/audio_feats.npz (audio_feats.py). Each EDL segment is cut from its source by ffmpeg into
-mv/work/seg/ (1280x720, 24 fps, speed applied); AI clips with a person matte get a matching matte
-segment. Every output frame is then built on the GPU with moderngl:
+mv/work/seg/ (1280x720, 24 fps, speed applied; ramps and loops are read through the shot's time map in
+motion.py); AI clips with a person matte get a matching matte segment. Every output frame is then built
+on the GPU with moderngl:
   pass 1  layer transforms (zoom/pan/rotate/shake, mirror, kaleidoscope), gradient-map grading,
-          dissolves, double exposure (over track), echo/trail feedback, glitch; matte in alpha
+          transitions (dissolve, dip, whip, zoom, luma, burn, matte, matte_in, defocus, or fx.py's own),
+          double exposure (over track), fx.py's composite shader, echo/trail/ghost feedback, glitch;
+          matte in alpha
   pass 2  overlay: "behind" layer (big words) masked by the person matte, then the "front" layer
-  bloom   two-level bloom from the bright pass
-  final   punch-in, shockwave, chromatic aberration, bloom/halation, star glints, flash, fx.py's
+  bloom   two-level bloom from the bright pass, and horizontal anamorphic streaks from the brightest
+  final   punch-in, shockwave, chromatic aberration, bloom/halation, streaks, star glints, flash, fx.py's
           final shader, vignette, scanlines, film grain, fade
 Sources can also be GEN_GRID, GEN_PLASMA or GEN_TUNNEL: procedural backgrounds drawn in the shader
 that pulse with the kick, for visualizers and footage-free sections.
 With --stills it writes JPEGs (OUT_<time>.jpg) instead of a video, rendering a 0.6 s warm-up before
 each still so feedback effects look the same as in the full render.
+--variant A renders with look_A.py and fx_A.py from mv/scripts/ instead of look.py and fx.py (either may
+be missing), for one still per concept before the user picks a direction (SKILL.md Phase 5).
 
 This file is the engine and has no style of its own. Per video: look.py (palettes, grades and the
 finish: grain, bloom, glints, letterbox, drop flashes, all off by default) and fx.py (this video's
@@ -38,9 +44,28 @@ import moderngl
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+
+def _variant():
+    for k, a in enumerate(sys.argv):
+        if a == "--variant" and k + 1 < len(sys.argv):
+            return sys.argv[k + 1]
+        if a.startswith("--variant="):
+            return a.split("=", 1)[1]
+    return None
+
+
+VARIANT = _variant()
+if VARIANT and __name__ == "__main__":   # a direction draft: look_A.py / fx_A.py stand in for look.py / fx.py
+    import importlib
+    for _name in ("look", "fx"):        # look first: fx and overlay import it
+        if (Path(__file__).parent / f"{_name}_{VARIANT}.py").exists():
+            sys.modules[_name] = importlib.import_module(f"{_name}_{VARIANT}")
+
 from media import GEN_IDS, crop_for, is_ai, is_gen, is_image, matte_path, src_path  # noqa: E402
 import fx  # noqa: E402
 from look import FINISH, GRADES, PALETTES, SHADOW_TINT  # noqa: E402
+from motion import base_speed, ease, seg_time, shot_xform  # noqa: E402
 from overlay import Overlay  # noqa: E402
 from timing import BEAT, DROPS, DUR, END, FPS, SHOCKS, SONG, beat_phase, is_calm, section  # noqa: E402
 
@@ -80,7 +105,10 @@ uniform sampler2D tA, tB, tC, tPrev, tMA, tMB;
 uniform float hasMA, hasMB;
 uniform vec4 xfA, xfB, xfC;          // zoom, offx, offy, rot
 uniform vec4 gA1, gA2, gB1, gB2, gC1, gC2;  // (gm,pal,sat,con) (lift,expo,mirror,kal)
-uniform float mixAB, opC, blendC, echo, trail, glitch, time, kalRot, genA, genB, genC, kick, loud;
+uniform float opC, blendC, echo, trail, ghost, glitch, time, kalRot, genA, genB, genC, kick, loud;
+uniform float inX, xKind, xU;        // transition running, its kind, progress 0..1
+uniform vec2 xDir, xCen;             // whip direction (content travel), zoom centre (shader uv)
+uniform vec3 xCol;                   // dip colour, burn edge colour
 in vec2 uv; out vec4 o;
 """ + COMMON + """
 vec3 pal(float l, float id){
@@ -146,6 +174,73 @@ vec3 layer(sampler2D t, vec2 p, vec4 xf, vec4 g1, vec4 g2, vec2 gofs, float gen)
   } else c = texture(t, q).rgb;
   return grade(c, g1, g2);
 }
+// Helpers for transitions and fx.py: the graded, transformed outgoing (A) and incoming (B) shots and
+// their person mattes at any screen position.
+vec2 GOFS = vec2(0.0);
+vec3 sampleA(vec2 q){ return layer(tA, q, xfA, gA1, gA2, GOFS, genA); }
+vec3 sampleB(vec2 q){ return layer(tB, q, xfB, gB1, gB2, GOFS, genB); }
+float matteA(vec2 q){ if (hasMA < 0.5) return 0.0; vec2 s = xform(q, xfA, gA2.z, gA2.w); s.y = 1.0 - s.y; return texture(tMA, s).r; }
+float matteB(vec2 q){ if (hasMB < 0.5) return 0.0; vec2 s = xform(q, xfB, gB2.z, gB2.w); s.y = 1.0 - s.y; return texture(tMB, s).r; }
+float luma(vec3 c){ return dot(c, vec3(.299,.587,.114)); }
+vec3 sampleAB(float useB, vec2 q){ return useB > 0.5 ? sampleB(q) : sampleA(q); }
+vec4 xEngine(vec3 a, vec3 b, float mA, float mB, float u, vec2 p){   // picture, and the matte to go with it
+  float h = u < 0.5 ? u*2.0 : (1.0 - u)*2.0;     // 0 at both ends, 1 at the cut (centred kinds)
+  float useB = step(0.5, u);
+  float mAB = mix(mA, mB, useB);
+  if (xKind < 0.5){ float w = smoothstep(0.0, 1.0, u); return vec4(mix(a, b, w), mix(mA, mB, w)); }   // dissolve
+  if (xKind < 1.5){                                                               // dip through xCol
+    float w = smoothstep(0.0, 1.0, h);
+    return vec4(mix(u < 0.5 ? a : b, xCol, w*w), mAB*(1.0 - w));
+  }
+  if (xKind < 2.5){                                                               // whip
+    float s = h*h*h*0.55, len = h*h*0.4;
+    vec3 c = vec3(0.0);
+    for (int i = 0; i < 16; i++){
+      float f = (float(i)/15.0 - 0.5)*len;
+      c += sampleAB(useB, u < 0.5 ? p - xDir*(s + f) : p + xDir*(s + f));
+    }
+    float m = u < 0.5 ? matteA(p - xDir*s) : matteB(p + xDir*s);
+    return vec4(c/16.0, m*(1.0 - h));
+  }
+  if (xKind < 3.5){                                                               // zoom through
+    float z = 1.0 + 3.0*h*h*h, len = h*h*0.35;
+    vec3 c = vec3(0.0);
+    for (int i = 0; i < 16; i++){
+      float f = 1.0 + len*float(i)/15.0;
+      c += sampleAB(useB, xCen + (p - xCen)/(z*f));
+    }
+    vec2 q = xCen + (p - xCen)/z;
+    float m = u < 0.5 ? matteA(q) : matteB(q);
+    return vec4(c/16.0*(1.0 + 0.35*h*h), m*(1.0 - h));
+  }
+  if (xKind < 5.5){                                                               // luma: darks first; burn: lights first, glowing edge
+    float th = xKind < 4.5 ? mix(-0.2, 1.2, u) : mix(1.2, -0.2, u);
+    float la = luma(a);
+    float w = xKind < 4.5 ? 1.0 - smoothstep(th - 0.12, th + 0.12, la) : smoothstep(th - 0.12, th + 0.12, la);
+    vec3 c = mix(a, b, w);
+    if (xKind > 4.5) c += xCol*w*(1.0 - w)*6.0;
+    return vec4(c, mix(mA, mB, w));
+  }
+  if (xKind < 6.5){                                                               // matte: A's person stays while the world becomes B
+    float w = smoothstep(0.0, 0.4, u);
+    if (hasMA < 0.5){ w = smoothstep(0.0, 1.0, u); return vec4(mix(a, b, w), mix(mA, mB, w)); }
+    float keep = mA*(1.0 - smoothstep(0.6, 1.0, u));
+    return vec4(mix(mix(a, b, w), a, keep), mix(mix(mA, mB, w), 1.0, keep));
+  }
+  if (xKind < 7.5){                                                               // matte_in: B's person arrives first, then B's world
+    float w = smoothstep(0.6, 1.0, u);
+    if (hasMB < 0.5){ w = smoothstep(0.0, 1.0, u); return vec4(mix(a, b, w), mix(mA, mB, w)); }
+    float person = mB*smoothstep(0.0, 0.4, u);
+    return vec4(mix(mix(a, b, w), b, person), mix(mix(mA, mB, w), 1.0, person));
+  }
+  float r = h*h*0.035;                                                            // defocus handoff
+  vec3 c = vec3(0.0);
+  for (int i = 0; i < 16; i++){
+    float rr = sqrt((float(i) + 0.5)/16.0)*r, an = float(i)*2.39996;
+    c += sampleAB(useB, p + vec2(cos(an)/ASP, sin(an))*rr);
+  }
+  return vec4(c/16.0*(1.0 + 0.25*h), mAB*(1.0 - h));
+}
 void main(){
   vec2 p = uv;
   float seed = floor(time*12.0);
@@ -155,13 +250,22 @@ void main(){
     if (hash(vec2(band, seed)) < glitch*0.7) p.x += (hash(vec2(band, seed+3.1))-0.5)*0.22*glitch;
     gofs = vec2(0.006 + 0.02*glitch, 0.0);
   }
+  GOFS = gofs;
   vec3 a = layer(tA, p, xfA, gA1, gA2, gofs, genA);
-  float mA = 0.0, mB = 0.0;
-  if (hasMA > 0.5){ vec2 q = xform(p, xfA, gA2.z, gA2.w); q.y = 1.0 - q.y; mA = texture(tMA, q).r; }
-  if (hasMB > 0.5){ vec2 q = xform(p, xfB, gB2.z, gB2.w); q.y = 1.0 - q.y; mB = texture(tMB, q).r; }
-  float matte = mix(mA, mB, mixAB);
+  float mA = matteA(p), mB = matteB(p);
+  float matte = mA;
   vec3 col = a;
-  if (mixAB > 0.0) col = mix(a, layer(tB, p, xfB, gB1, gB2, gofs, genB), mixAB);
+  if (inX > 0.5){
+    vec3 b = layer(tB, p, xfB, gB1, gB2, gofs, genB);
+    if (xKind > 99.5){
+      col = fxMix(a, b, mA, mB, xU, p, xKind - 100.0);
+      matte = mix(mA, mB, smoothstep(0.0, 1.0, xU));
+    } else {
+      vec4 xr = xEngine(a, b, mA, mB, xU, p);
+      col = xr.rgb;
+      matte = xr.a;
+    }
+  }
   if (opC > 0.0){
     vec3 c = layer(tC, p, xfC, gC1, gC2, gofs, genC) * opC;
     if (blendC < 0.5) col = 1.0-(1.0-col)*(1.0-c);
@@ -177,6 +281,11 @@ void main(){
   }
   if (echo > 0.0) col = mix(col, prev, echo);
   if (trail > 0.0) col = max(col, prev*trail);
+  if (ghost > 0.0){   // trails of the person only: the last frames' silhouettes linger and fade
+    float pm = texture(tPrev, uv).a*ghost;
+    col = mix(col, prev, pm*(1.0 - matte));
+    matte = max(matte, pm);
+  }
   o = vec4(col, matte);
 }
 """
@@ -204,7 +313,13 @@ def _fx_glsl():
     return "\n".join(decl)
 
 
-P1 = P1.replace("PALETTE_CODE", _palette_glsl()).replace("void main(){", _fx_glsl() + "\n" + fx.GLSL_COMP + "\nvoid main(){", 1)
+GLSL_MIX_DEFAULT = """
+vec3 fxMix(vec3 a, vec3 b, float mA, float mB, float u, vec2 uv, float kind){ return mix(a, b, smoothstep(0.0, 1.0, u)); }
+"""
+# fx.py's uniforms and GLSL go in right before xEngine, so both its transitions and fxComp can use
+# sampleA/sampleB/matteA/matteB.
+P1 = P1.replace("PALETTE_CODE", _palette_glsl()).replace(
+    "vec4 xEngine(", _fx_glsl() + "\n" + getattr(fx, "GLSL_MIX", GLSL_MIX_DEFAULT) + "\n" + fx.GLSL_COMP + "\nvec4 xEngine(", 1)
 
 P2 = """
 #version 330
@@ -250,8 +365,9 @@ void main(){
 
 FINAL = """
 #version 330
-uniform sampler2D tComp, tB1, tB2;
+uniform sampler2D tComp, tB1, tB2, tS;
 uniform float bloom, halation, ca, shockT, shockAmp, grain, vignette, scan, letterbox, fade, flash, time, punch, invert, tint, glint;
+uniform float streak; uniform vec3 streakTint;
 in vec2 uv; out vec4 o;
 """ + COMMON + """
 void main(){
@@ -272,6 +388,7 @@ void main(){
   vec3 b1 = texture(tB1, p).rgb, b2 = texture(tB2, p).rgb;
   col += b1*bloom + b2*bloom*0.8;
   col += b2*halation*vec3(1.0,0.32,0.12);
+  col += streakTint*dot(texture(tS, p).rgb, vec3(0.333))*streak*2.0;   // anamorphic streaks
   if (glint > 0.0){
     vec3 star = vec3(0.0);
     for (int i = 1; i <= 10; i++){
@@ -360,11 +477,16 @@ class Reader:
         self.open()
 
     def open(self):
+        # stderr is dropped: closing a reader early makes ffmpeg report a broken pipe, which is not an error
         self.p = subprocess.Popen(["ffmpeg", "-v", "error", "-i", str(self.path), "-f", "rawvideo",
-                                   "-pix_fmt", "gray" if self.gray else "rgb24", "-"], stdout=subprocess.PIPE)
+                                   "-pix_fmt", "gray" if self.gray else "rgb24", "-"], stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL)
         self.i, self.buf = -1, bytes(self.nb)
+        self.cache = getattr(self, "cache", {})
 
     def get(self, fi):
+        if fi in self.cache:            # loops replay recent frames
+            return self.cache[fi]
         if fi < self.i:
             self.close()
             self.open()
@@ -373,17 +495,15 @@ class Reader:
             if len(data) < self.nb:
                 break
             self.buf, self.i = data, self.i + 1
+            self.cache[self.i] = data
+            if len(self.cache) > 36:
+                self.cache.pop(next(iter(self.cache)))
         return self.buf
 
     def close(self):
         self.p.stdout.close()
         self.p.kill()
         self.p.wait()
-
-
-def ease(u):
-    u = min(max(u, 0.0), 1.0)
-    return u * u * (3 - 2 * u)
 
 
 class Track:
@@ -402,7 +522,7 @@ class Track:
     def frame(self, seg, local):
         if seg["src"] == "BLACK" or is_gen(seg["src"]):
             return bytes(SW * SH * 3)
-        return self.reader(seg).get(max(0, int(round(local * FPS))))
+        return self.reader(seg).get(max(0, int(round(seg_time(seg, local) * FPS))))
 
     def matte(self, seg, local):
         f = seg.get("mfile")
@@ -410,7 +530,7 @@ class Track:
             return None
         if f not in self.readers:
             self.readers[f] = Reader(f, gray=True)
-        return self.readers[f].get(max(0, int(round(local * FPS))))
+        return self.readers[f].get(max(0, int(round(seg_time(seg, local) * FPS))))
 
     def gc(self, keep):
         for f in list(self.readers):
@@ -418,16 +538,7 @@ class Track:
                 self.readers.pop(f).close()
 
 
-def xf_uniform(seg, local):
-    u = ease(local / max(seg["dur"], 1e-3))
-    z0, z1 = seg.get("zoom", (1.0, 1.06))
-    p0, p1 = seg.get("pan", ((0, 0), (0, 0)))
-    z = z0 + (z1 - z0) * u
-    shake = seg.get("shake", 0.0)
-    sx = shake * (math.sin(local * 37.0) * 0.6 + math.sin(local * 23.0) * 0.4) * 0.01
-    sy = shake * (math.cos(local * 31.0) * 0.6 + math.sin(local * 17.0) * 0.4) * 0.01
-    return (z, p0[0] + (p1[0] - p0[0]) * u + sx, p0[1] + (p1[1] - p0[1]) * u + sy,
-            seg.get("rot", 0.0) + seg.get("spin", 0.0) * local)
+xf_uniform = shot_xform   # the shot's camera move, in motion.py so overlays and track.py share it
 
 
 def grade_uniform(seg):
@@ -436,22 +547,44 @@ def grade_uniform(seg):
                                       float(seg.get("kal", 0)))
 
 
+# Transitions between two shots (x= in the EDL). "into" runs from the cut into the new shot while the
+# old one keeps playing; "center" is centred on the cut, so the switch lands on the beat.
+XKIND = {"dissolve": 0, "dip": 1, "whip": 2, "zoom": 3, "luma": 4, "burn": 5, "matte": 6, "matte_in": 7,
+         "defocus": 8}
+XMODE = {"dissolve": "into", "dip": "center", "whip": "center", "zoom": "center", "luma": "into",
+         "burn": "into", "matte": "into", "matte_in": "into", "defocus": "center"}
+_custom = getattr(fx, "TRANSITIONS", [])
+for _k, _name in enumerate(_custom):
+    XKIND[_name] = 100 + _k
+    XMODE[_name] = _custom[_name] if isinstance(_custom, dict) else "into"
+XDIRS = {"left": (-1.0, 0.0), "right": (1.0, 0.0), "up": (0.0, 1.0), "down": (0.0, -1.0)}
+XCOL = {"dip": (0.0, 0.0, 0.0), "burn": (1.0, 0.55, 0.2)}
+
+
+def into_extra(nxt):
+    """Seconds the outgoing shot must keep playing under the next shot's transition."""
+    if not nxt or nxt.get("x") not in XKIND:
+        return 0.0
+    return nxt["xd"] if XMODE[nxt["x"]] == "into" else nxt["xd"] / 2
+
+
 def build_jobs(edl):
     jobs = []
     main = edl["main"]
     for i, s in enumerate(main):
         nxt = main[i + 1] if i + 1 < len(main) else None
-        extra = nxt["xd"] if nxt and nxt.get("x") == "dissolve" else 0.0
-        need = s["dur"] + extra + 0.1
-        s["file"] = str(seg_file(s["src"], s["in"], need, s.get("speed", 1.0), s.get("rev", False)))
-        jobs.append(((s["src"], s["in"], need, s.get("speed", 1.0), s.get("rev", False), Path(s["file"])), s))
+        sp = base_speed(s)
+        need = seg_time(s, s["dur"] + into_extra(nxt) + 0.1)   # unchanged shots keep their cached segments
+        s["file"] = str(seg_file(s["src"], s["in"], need, sp, s.get("rev", False)))
+        jobs.append(((s["src"], s["in"], need, sp, s.get("rev", False), Path(s["file"])), s))
         if s["src"] != "BLACK" and not is_gen(s["src"]) and (s.get("matte") or (is_ai(s["src"]) and matte_path(s["src"]).exists())):
             s["mfile"] = s["file"].replace(".mp4", "_m.mp4")
-            jobs.append(((s["src"], s["in"], need, s.get("speed", 1.0), s.get("rev", False), Path(s["mfile"]), True), s))
+            jobs.append(((s["src"], s["in"], need, sp, s.get("rev", False), Path(s["mfile"]), True), s))
     for s in edl.get("over", []):
-        need = s["dur"] + 0.1
-        s["file"] = str(seg_file(s["src"], s["in"], need, s.get("speed", 1.0), s.get("rev", False)))
-        jobs.append(((s["src"], s["in"], need, s.get("speed", 1.0), s.get("rev", False), Path(s["file"])), s))
+        sp = base_speed(s)
+        need = seg_time(s, s["dur"] + 0.1)
+        s["file"] = str(seg_file(s["src"], s["in"], need, sp, s.get("rev", False)))
+        jobs.append(((s["src"], s["in"], need, sp, s.get("rev", False), Path(s["file"])), s))
     return jobs
 
 
@@ -485,7 +618,9 @@ def main():
     ap.add_argument("--end", type=float, default=DUR)
     ap.add_argument("--size", default="1920x1080", help="WxH, e.g. 1080x1920 for vertical")
     ap.add_argument("--stills", default="")
+    ap.add_argument("--variant", default=None, help="render with look_<V>.py and fx_<V>.py (direction stills)")
     args = ap.parse_args()
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
 
     W, H = map(int, args.size.lower().split("x"))
     out_asp = W / H
@@ -564,6 +699,11 @@ def main():
     b1, b2 = tex(bw, bh, 4, "f2"), tex(bw, bh, 4, "f2")
     c1, c2 = tex(bw // 2, bh // 2, 4, "f2"), tex(bw // 2, bh // 2, 4, "f2")
     fb1, fb2, fc1, fc2 = (ctx.framebuffer([x]) for x in (b1, b2, c1, c2))
+    s1, s2 = tex(bw, bh, 4, "f2"), tex(bw, bh, 4, "f2")       # anamorphic streaks
+    fs1, fs2 = ctx.framebuffer([s1]), ctx.framebuffer([s2])
+    streak_fin = FINISH.get("streak", (0.0, 0.0))          # older look.py files have no streak keys
+    streak_tint = FINISH.get("streak_tint", (0.45, 0.65, 1.0))
+    streak_thr = FINISH.get("streak_thr", 0.8)
     outt = tex(W, H, 3)
     fout = ctx.framebuffer([outt])
     for f in fbase:
@@ -590,26 +730,34 @@ def main():
         i = find(main_segs, t)
         seg = main_segs[i]
         local = t - seg["start"]
-        mixab = 0.0
-        if seg.get("x") == "dissolve" and local < seg["xd"] and i > 0:
+        nxt = main_segs[i + 1] if i + 1 < len(main_segs) else None
+        xs = None   # (outgoing shot, its local time, incoming shot, its local time, progress, shot with x=)
+        kind = seg.get("x")
+        if i > 0 and kind in XKIND:
             prev = main_segs[i - 1]
-            tA.write(mt.frame(prev, t - prev["start"]))
-            tB.write(mt.frame(seg, local))
-            sa, la = prev, t - prev["start"]
-            mixab = ease(local / seg["xd"])
-            keep = {prev["file"], seg["file"], prev.get("mfile"), seg.get("mfile")}
-            ma, mb = mt.matte(prev, t - prev["start"]), mt.matte(seg, local)
+            if XMODE[kind] == "into" and local < seg["xd"]:
+                xs = (prev, t - prev["start"], seg, local, local / seg["xd"], seg)
+            elif XMODE[kind] == "center" and local < seg["xd"] / 2:
+                xs = (prev, t - prev["start"], seg, local, 0.5 + local / seg["xd"], seg)
+        if xs is None and nxt and nxt.get("x") in XKIND and XMODE[nxt["x"]] == "center" and nxt["start"] - t < nxt["xd"] / 2:
+            xs = (seg, local, nxt, 0.0, 0.5 - (nxt["start"] - t) / nxt["xd"], nxt)
+        if xs:
+            sa, la, sb, lbt, xu, xseg = xs
+            tA.write(mt.frame(sa, la))
+            tB.write(mt.frame(sb, lbt))
+            ma, mb = mt.matte(sa, la), mt.matte(sb, lbt)
+            keep = {sa["file"], sb["file"], sa.get("mfile"), sb.get("mfile")}
         else:
+            sa, la, sb, lbt, xu, xseg = seg, local, seg, local, 0.0, None
             tA.write(mt.frame(seg, local))
-            sa, la = seg, local
-            keep = {seg["file"], seg.get("mfile")}
             ma, mb = mt.matte(seg, local), None
+            keep = {seg["file"], seg.get("mfile")}
         if ma is not None:
             tMA.write(ma)
         if mb is not None:
             tMB.write(mb)
-        if i + 1 < len(main_segs):
-            keep.add(main_segs[i + 1]["file"])
+        if nxt:
+            keep |= {nxt["file"], nxt.get("mfile")}
         mt.gc(keep)
 
         oc = 0.0
@@ -634,7 +782,6 @@ def main():
         # glitch burst around hard cuts tagged "glitch"
         if seg.get("x") == "glitch" and local < 0.16:
             glitch = max(glitch, 0.8)
-        nxt = main_segs[i + 1] if i + 1 < len(main_segs) else None
         if nxt and nxt.get("x") == "glitch" and nxt["start"] - t < 0.09:
             glitch = max(glitch, 0.6)
         flash = 0.0
@@ -669,8 +816,8 @@ def main():
         p1["xfA"] = xf_uniform(sa, la)
         ga1, ga2 = grade_uniform(sa)
         p1["gA1"], p1["gA2"] = ga1, ga2
-        p1["xfB"] = xf_uniform(seg, local)
-        gb1, gb2 = grade_uniform(seg)
+        p1["xfB"] = xf_uniform(sb, lbt)
+        gb1, gb2 = grade_uniform(sb)
         p1["gB1"], p1["gB2"] = gb1, gb2
         if osg:
             p1["xfC"] = xf_uniform(osg, t - osg["start"])
@@ -678,11 +825,19 @@ def main():
             p1["gC1"], p1["gC2"] = gc1, gc2
             p1["blendC"] = float({"screen": 0, "add": 1, "lighten": 2, "diff": 3}[osg.get("blend", "screen")])
         p1["genA"] = float(GEN_IDS.get(sa["src"], 0))
-        p1["genB"] = float(GEN_IDS.get(seg["src"], 0))
+        p1["genB"] = float(GEN_IDS.get(sb["src"], 0))
         p1["genC"] = float(GEN_IDS.get(osg["src"], 0)) if osg else 0.0
         p1["kick"] = kenv
         p1["loud"] = loud
-        p1["mixAB"] = mixab
+        p1["inX"] = 1.0 if xseg else 0.0
+        p1["xU"] = xu
+        if xseg:
+            p1["xKind"] = float(XKIND[xseg["x"]])
+            p1["xDir"] = XDIRS[xseg.get("xdir", "left")]
+            p1["xCol"] = tuple(xseg.get("xcol", XCOL.get(xseg["x"], (0.0, 0.0, 0.0))))
+            cx, cy = xseg.get("xc", (0.5, 0.5))
+            p1["xCen"] = (cx, 1.0 - cy)
+        p1["ghost"] = seg.get("ghost", 0.0)
         p1["opC"] = oc
         p1["echo"] = seg.get("echo", 0.0)
         p1["trail"] = seg.get("trail", 0.0)
@@ -692,14 +847,16 @@ def main():
         fi_c = min(fi, len(a_kick) - 1)
         fxa = dict(kick=float(a_kick[fi_c]), snare=float(a_snare[fi_c]), hat=hat, rms=loud, spec=a_spec[fi_c],
                    beat=bk, phase=since, section=name, kick_level=kick, calm=calm, src=seg["src"], local=local,
-                   shot=seg, BEAT=BEAT, pulse=kenv)
+                   shot=seg, BEAT=BEAT, pulse=kenv, x=xseg["x"] if xseg else None, xu=xu,
+                   track=lambda nm, _s=seg, _l=local: ov.track_uv(nm, _s, _l))
         fxv = {**fx.UNIFORMS, **fx.uniforms(t, fxa)}
         set_fx((p1, pfi), fxv)
         fbase[ping].use()
         v1.render(moderngl.TRIANGLE_STRIP)
 
         # pass 2: text (the EDL's end-card tail is BLACK, so fx.py can draw the end card in any pass)
-        ob, o = ov.frame(t, {"src": seg["src"], "local": local, "dur": seg["dur"], "label": seg.get("label")})
+        ob, o = ov.frame(t, {"src": seg["src"], "local": local, "dur": seg["dur"], "label": seg.get("label"),
+                             "shot": seg, "start": seg["start"]})
         p2["tBase"], p2["tOver"], p2["tBehind"] = 0, 1, 2
         base[ping].use(0)
         if o is not None:
@@ -739,13 +896,27 @@ def main():
             pbl["dir"] = d
             dst_f.use()
             vbl.render(moderngl.TRIANGLE_STRIP)
+        src_i = 0 if ai else 1
+        streak = float(fxv.get("streak", streak_fin[src_i]))
+        if streak > 0:   # the brightest lights smeared sideways, like an anamorphic lens
+            pbr["thr"] = streak_thr
+            comp.use(0)
+            fs1.use()
+            vbr.render(moderngl.TRIANGLE_STRIP)
+            for k, d in enumerate((1.5, 4.5, 13.5, 40.0)):
+                (s1 if k % 2 == 0 else s2).use(0)
+                pbl["dir"] = (d / bw, 0)
+                (fs2 if k % 2 == 0 else fs1).use()
+                vbl.render(moderngl.TRIANGLE_STRIP)
 
         # final
-        pfi["tComp"], pfi["tB1"], pfi["tB2"] = 0, 1, 2
+        pfi["tComp"], pfi["tB1"], pfi["tB2"], pfi["tS"] = 0, 1, 2, 3
         comp.use(0)
         b1.use(1)
         c1.use(2)
-        src_i = 0 if ai else 1
+        s1.use(3)
+        pfi["streak"] = streak
+        pfi["streakTint"] = tuple(streak_tint)
         pfi["bloom"] = (FINISH["bloom"][src_i] * (FINISH["bloom_calm"] if calm else 1.0)
                         + FINISH["bloom_kick"] * kenv + FINISH["bloom_loud"] * loud)
         pfi["glint"] = FINISH["glint"][0] + FINISH["glint"][1] * hat

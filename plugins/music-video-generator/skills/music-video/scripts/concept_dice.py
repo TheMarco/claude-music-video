@@ -38,6 +38,9 @@ DECKS = {
         "halo: a soft glow behind the person (matte), swelling with the voice",
         "streaks: thin light streaks racing across on the hi-hats",
         "dust motes: specks lit in the light, drifting slowly in the calm parts",
+        "pinned light: a flare or light rays living on a lamp or window in the footage (track.py)",
+        "pinned word: a word fixed to a wall or the sky in the scene, moving with the camera (track.py)",
+        "ghosts: the dancer leaves fading trails of themselves on fast moves (ghost=)",
     ],
     "accent": [  # a picture-wide hit for a beat or two on drops and big accents, never longer
         "flash frame: one bright frame on the drop",
@@ -50,6 +53,8 @@ DECKS = {
         "glitch: block displacement for two frames on the hit",
         "stutter: half a beat repeated before the drop",
         "smash to black: a beat of black before the drop",
+        "lightning: two to four snapping white strokes on the hit",
+        "slam to slow: the footage drops into slow motion on the downbeat (ramp=)",
     ],
     "color": [  # moves inside the grade; the footage stays readable
         "drop color: one hue arrives only from the drop on",
@@ -71,6 +76,7 @@ DECKS = {
         "vertical: words stacked down one edge",
         "font swap: a word that strobes between faces on the hats",
         "scratched: letters scratched into the film",
+        "landing letters: letters drop in one by one, overshoot and settle on the drop",
     ],
     "transition": [  # how cuts are marked
         "whip pans: motion-blurred whips between shots",
@@ -81,6 +87,10 @@ DECKS = {
         "reverse snap: a shot snaps backwards before the cut",
         "leak dissolves: dissolves that pass through a light leak",
         "dip to white: short white dips on phrase starts",
+        "matte cuts: the performer stays while the world changes behind them",
+        "luma reveals: the next shot rises out of the last one's shadows",
+        "focus pulls: one shot defocuses, the next comes into focus",
+        "tear: the frame rips open onto the next shot (a GLSL_MIX of the video's own)",
     ],
     "reaction": [  # what the music drives
         "kick zoom: framing punches on the kick",

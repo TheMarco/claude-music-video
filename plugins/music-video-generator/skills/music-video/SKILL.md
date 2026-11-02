@@ -74,6 +74,11 @@ These matter more than any technique below.
 - **Text is sparse.** Running subtitles belong in lyric videos, when asked.
 - **Grain, when a look uses it, has to read as film, not digital noise.** The engine's grain does this
   (clumped, per dye layer, midtone weighted).
+- **Write taste down as it is said.** When the user reacts to a concept, a still or a render ("too
+  clean", "more like the second one", "that drop is it"), add their words verbatim to
+  `~/.claude/music-video/local.md` under "## Taste" (create the heading if missing), with what it was
+  about (this song, club tracks, every video). Phase 5 reads it. A preference about one kind of video is
+  not a default for all of them.
 
 ## Phase 0: the brief
 
@@ -84,7 +89,10 @@ Ask these in one plain message, each with your default, so the user can answer o
    of that city being built)?
 3. **Look and mood.** A few words, references, or free rein? (Default: three directions inside the
    mood, proposed after the song analysis, Phase 5.) Write the user's words down exactly; they are the
-   test for everything later.
+   test for everything later. When they name a reference video, director or artist, ask for a file or
+   screenshots and look at them before the concepts
+   (`ffmpeg -i ref.mp4 -vf fps=1/4,scale=320:-1,tile=6x5 -frames:v 1 mv/work/ref.jpg`). Working from
+   a name gets the average of everything under that name, not the reference.
 4. **Footage mix.** How much AI-generated versus archive footage, or archive only? See "Choosing the mix".
 5. **AI provider and settings** if any AI footage: which MCP, model, resolution, clip length, lipsync
    or not. Default: whatever video MCP is connected, low resolution (480p) to save credits, no lipsync,
@@ -149,7 +157,9 @@ the project root.
 
 When a project's `mv/scripts/` is older than the template, copy `mv/scripts/` to `mv/scripts_old/`, then
 copy the template's engine files over everything except the project's own `edl.py`, `look.py` and
-`fx.py`. Render stills at 4-6 moments with both and compare before changing anything else.
+`fx.py`. Render stills at 4-6 moments with both and compare before changing anything else. Older
+`fx.py` and `look.py` files keep working; to use newer shot options (transitions beyond dissolve,
+`ramp`, `loop`, `ghost`), move the project's EDIT block and settings into the template's `edl.py`.
 
 ## Phase 2: the song
 
@@ -251,6 +261,13 @@ Few long takes in a fast song read as stuck, and twice the cuts reads as noise. 
 on top (match cuts, repetition, freezes, ramps); decide them in Phase 5. Save the most striking footage
 for the moments the song builds to.
 
+Most cuts in a music video are hard cuts on the beat; a transition is a decision about one seam, chosen
+from how the two shots relate (`references/effects-ideas.md`, "Transitions"). The engine has dissolve,
+dip, whip, zoom, luma, burn, matte (the performer stays while the world changes behind them), matte_in
+and defocus, plus any the concept writes in `fx.py`. Time is material too: speed ramps (`ramp=`, fast
+into the drop and slow motion on it), loops (`loop=`, a stutter on a snare roll) and trails of the
+person only (`ghost=`). The docstring in `edl.py` lists every option.
+
 **Check every shot before rendering.** `.venv/bin/python mv/scripts/contact.py mv/work/shots --edl`
 makes contact sheets of every shot at its midpoint, cropped as rendered, and prints a brightness report.
 Look at all of them: title cards, in-points on the wrong side of a cut, shots too dark to read. Shots
@@ -273,7 +290,9 @@ is never traded for the second.
   picture-wide hit is allowed as an accent of a beat or two on a drop. (Visualizers are the exception:
   there the picture itself is generated.)
 - **The picture moves with the music.** Cuts sit on the grid, energy follows the sections, and each drop
-  lands visibly harder than what led into it (cut, light, color, motion or scale).
+  is a set piece: the bar before it holds something back (darker, tighter, a freeze, a beat of black),
+  the drop's first frame lands up to three things at once (cut, light, color, motion, scale, type), and
+  the next beats follow through instead of going flat. It lands visibly harder than anything before it.
 - **It tells a story without words.** Chapters that follow the song, each with its own footage, angles
   that change, and colour that turns when the story does (Phase 4). Footage chosen only for mood, mixed
   from every source in every section, reads as disconnected however good each shot is.
@@ -291,24 +310,35 @@ lines returns unless the user asks.
 1. **Brief and song first.** Write down the brief's mood and look words, and what the song does at its
    loudest point (tempo, drops, how the energy feels). Every concept has to pass both.
 2. **Read `~/.claude/music-video/history.md`** (create it from `$SKILL/assets/history_template.md` if
-   missing): the identity lines of recent videos and any rejected directions. For a new version of the
+   missing): the identity lines of recent videos, any rejected directions, and concepts proposed earlier
+   but not chosen (free to use). Read the "## Taste" section of `local.md` too. For a new version of the
    same song, keep the brief's look and the edit's energy; replace what the user objected to.
 3. **Collect motifs and sparks.** 5-10 concrete motifs from the title, lyrics, theme and footage; method
    and sparks in `references/effects-ideas.md`. For more, `python3 "$SKILL/scripts/concept_dice.py"`
    draws random overlay ideas; use the ones that serve the brief and drop the rest.
 4. **Write three concepts**, three different identities inside the same brief. For each: one or two
    sentences on what a viewer sees and feels at the drop (light, color, what fills the frame, what
-   moves); the look (palette, finish start); title and credits; type, or none; 3-6 signature overlays,
-   at least half new code, building toward the drop or last chorus; the edit's devices; the story in
-   one line per chapter. Each overlay says how much of the frame it covers and when: most of the time
-   the footage is what you see.
+   moves); the drop as a set piece (what the bar before it holds back, what lands on its first frame,
+   what the next beats do); the look (palette, finish start); title and credits; type, or none; 3-6
+   signature overlays, at least half new code, building toward the drop or last chorus; the edit's
+   devices (transitions, ramps, loops, match cuts); the story in one line per chapter. Each overlay says
+   how much of the frame it covers and when: most of the time the footage is what you see.
+   The three differ in what the viewer sees at the drop. Three concepts that differ only in palette or
+   type are one concept three times.
    Sensation over conceit: a concept whose appeal is a clever mapping that needs explaining (the verses
    as chess moves, the song as a lecture) is a design idea, not a video idea. Drop it.
 5. **Test each concept** against the craft list above and the habits below; replace any that fails.
-6. **Propose.** Send the three in one short message with a recommendation, and ask which one in a plain
-   question. Recommend the one that fits the brief best and hits hardest at the drop, not the most novel
-   or the cleverest. If the user says to choose, that is the one.
-7. **Avoid these habits.** Sessions reach for them whenever they go for the familiar, and they make
+6. **Show them.** Render one still per concept at the first drop, so the user chooses from pictures,
+   not descriptions. Rough each concept's look and its main overlay into `mv/scripts/look_A.py` and
+   `fx_A.py` (B, C; same grade names as the EDL), then
+   `.venv/bin/python mv/scripts/render.py mv/work/directions/A --stills <a few frames after the drop> --variant A`.
+   Same footage and moment for all three, so the comparison is fair. Skip this when the user already
+   chose a direction or said to choose.
+7. **Propose.** Send the three with their stills in one short message with a recommendation, and ask
+   which one in a plain question. Recommend the one that fits the brief best and hits hardest at the
+   drop, not the most novel or the cleverest. If the user says to choose, that is the one. Keep the
+   two not chosen for the history (Phase 7).
+8. **Avoid these habits.** Sessions reach for them whenever they go for the familiar, and they make
    different videos look like one family. Each is off unless the user asks for it:
    - broadcast, telemetry, surveillance or camcorder HUD frames: corner brackets, tally light, captions
      joined by "·", timecode and BPM readouts
@@ -321,24 +351,32 @@ lines returns unless the user asks.
    - a film-leader countdown before drops; a white flash plus a shockwave ring on the drop
    - star glints on the hi-hats, neon-tube script, synthwave sun-and-grid backgrounds
 
-   These are graphics, not finish. Glow, grain, halation, punch, shake and letterbox framing are craft
-   and stay available to every video.
-8. **Build it.** `look.py`: palettes, grades and the `FINISH` (from a start). `fx.py`: overlays
-   (`draw_front`, `draw_behind`), shaders (`GLSL_COMP` with the person matte, `GLSL_FINAL`) for matte
-   tricks, light and accents, and per-frame uniforms from the audio and song position (they can also
-   drive any engine value). The engine draws nothing by itself and stays untouched.
+   These are graphics, not finish. Glow, grain, halation, streaks, punch, shake and letterbox framing
+   are craft and stay available to every video.
+9. **Build it, drop first.** `look.py`: palettes, grades and the `FINISH` (from a start). `fx.py`:
+   overlays (`draw_front`, `draw_behind`), shaders (`GLSL_COMP` with the person matte, `GLSL_FINAL`)
+   for matte tricks, light and accents, transitions of the video's own (`GLSL_MIX`), and per-frame
+   uniforms from the audio, song position and tracked points (`track.py` pins an overlay to something
+   in the footage). The engine draws nothing by itself and stays untouched.
    `$SKILL/assets/examples/fx_examples.py` shows the mechanics; it is not a kit.
-9. **Judge the stills before the full render**, at the drops, the loudest chorus, the breakdown and the
-   intro. Don't approve your own stills because the idea is clever.
-   - Read them against the brief's words: would the user recognize their brief in these frames?
-   - If the history has accepted videos with frame sheets in `~/.claude/music-video/refs/`, put the new
-     stills next to them: as rich and as hard-hitting, clearly a different video. Without any, judge
-     against the craft list.
-   - Check `sheet.py`'s tone readout. For a dark or moody brief, dark shots need real blacks (black
-     share 0.25 or more); a pale, printed-looking picture sits around 0.05-0.15 on every shot.
-   - Compare with frames from the last three videos in the history for repeated identity.
-   - The story test: from the still sheets alone, write one sentence per section saying what happens.
-     If you can't, the video is still a montage; rework the chapters before rendering.
+   Build the first drop's set piece before anything else: render stills from a bar before it to a bar
+   after, plus a beatsheet (Phase 6), and get the review in step 10. Build the rest once the drop holds.
+10. **Get a fresh review of the stills** before the full render: the first drop's stills and beatsheet
+    while building, then sheets at every drop, the loudest chorus, the breakdown and the intro. Don't
+    approve your own stills because the idea is clever, and don't review them in the session that
+    designed them: start a fresh subagent (Agent tool, a new general-purpose agent, never a fork,
+    which would carry the concept's reasoning) with
+    "Read `$SKILL/references/review-stills.md` and follow it" plus only the inputs it lists: the
+    sheet and beatsheet paths, the tone readout, the brief's words verbatim, the concept's drop
+    sentence, `~/.claude/music-video/refs/`, and the last three history entries' identity lines. Act
+    on its first word (rebuild, fix, ship) and on its findings, or know why one stands. Its verdict
+    is a filter before the user sees anything, never a replacement for the user's: when they
+    disagree, the user wins and their words go under "Taste".
+    Your own checks still apply:
+    - Check `sheet.py`'s tone readout. For a dark or moody brief, dark shots need real blacks (black
+      share 0.25 or more); a pale, printed-looking picture sits around 0.05-0.15 on every shot.
+    - The story test: from the still sheets alone, write one sentence per section saying what happens.
+      If you can't, the video is still a montage; rework the chapters before rendering.
 
 `references/compositor.md` documents the engine, the per-shot options and the fx.py hooks.
 
@@ -348,13 +386,18 @@ lines returns unless the user asks.
 .venv/bin/python mv/scripts/contact.py mv/work/shots --edl                       # every shot + brightness
 .venv/bin/python mv/scripts/render.py mv/work/stills/s --stills 8,30,48,62,110,152,196
 .venv/bin/python mv/scripts/sheet.py mv/work/stills/s mv/work/stills/sheet
-.venv/bin/python mv/scripts/beatsheet.py mv/out/<name>_v1.mp4 mv/work/drop1.jpg <drop_time> 32   # one frame per beat
+.venv/bin/python mv/scripts/render.py mv/out/drop1.mp4 --start <bar before drop> --end <2 bars after> --size 1280x720
+.venv/bin/python mv/scripts/beatsheet.py mv/out/drop1.mp4 mv/work/drop1.jpg <bar before drop> 16 --start <same>
 .venv/bin/python mv/scripts/render.py mv/out/<name>_v1.mp4                         # full render
+.venv/bin/python mv/scripts/beatsheet.py mv/out/<name>_v1.mp4 mv/work/drop1.jpg <bar before drop> 32   # one frame per beat
 .venv/bin/python mv/scripts/render.py mv/out/<name>_9x16.mp4 --size 1080x1920      # vertical cut
 .venv/bin/python mv/scripts/qc.py mv/out/<name>_v1.mp4 --ignore-after <end>
 ```
 Look at still sheets before every full render: the y-flip, palette and exposure mistakes all show up
-there, and `sheet.py` prints each still's tones (Phase 5, step 9). A three-and-a-half-minute render
+there, and `sheet.py` prints each still's tones (Phase 5, step 10). Stills can't show motion: a short
+render across a drop and its beatsheet show whether the bar before holds back and the drop lands. After
+the full render, run the fresh review once more on beatsheets of every drop and a still sheet of the
+whole video before handing it over. A three-and-a-half-minute render
 takes a few minutes on a recent Apple Silicon Mac; segments are cached in `mv/work/seg/` (delete a
 clip's segments there after replacing the clip). Fine grain raises the bitrate: expect about 900 MB for
 three and a half minutes at CRF 19 with heavy grain.
@@ -369,4 +412,6 @@ before commercial release), and any shot you are unsure about. Clear superseded 
 When the user accepts a video, add its entry at the top of `~/.claude/music-video/history.md` in the
 template's format (brief, look, edit, type, graphics, signature) and save a six-frame sheet of it to
 `~/.claude/music-video/refs/<title>.jpg` (drops, loudest chorus, intro). When the user rejects a
-direction outright, add it under "Rejected directions" with their reasons.
+direction outright, add it under "Rejected directions" with their reasons. Add the concepts that were
+proposed but not chosen under "Concepts not chosen" (create the heading if missing), one line each with
+its drop sentence and signature overlays: they are free for a later video.

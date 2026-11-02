@@ -37,6 +37,9 @@ OFF = dict(
     bloom_calm=1.0,         # bloom multiplier in calm sections
     halation=(0.0, 0.0),    # red-orange glow around highlights, like film
     glint=(0.0, 0.0),       # star glints on highlights: base, plus this much times the hi-hat envelope
+    streak=(0.0, 0.0),      # anamorphic streaks: horizontal flares from the brightest lights, 0.3-1.0
+    streak_tint=(0.45, 0.65, 1.0),  # their colour (anamorphic blue; warm for tungsten and fire)
+    streak_thr=0.8,         # how bright a light must be to streak (0.7 more lights, 0.9 only the hottest)
     ca=(0.0, 0.0),          # chromatic aberration: base, plus this much times the beat pulse
     punch=0.0,              # zoom punch-in times the beat pulse (per shot: punch= in the EDL scales it)
     vignette=(0.0, 0.0),    # (normal, calm sections and the intro)

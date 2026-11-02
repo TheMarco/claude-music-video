@@ -22,6 +22,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent))
 from media import crop_for, is_gen, is_image, src_path as src  # noqa: E402
+from motion import src_elapsed  # noqa: E402
 
 TW, TH, COLS, ROWS = 320, 200, 6, 5
 try:
@@ -50,7 +51,7 @@ def edl_spec():
     for i, s in enumerate(segs):
         if s["src"] == "BLACK" or is_gen(s["src"]):
             continue
-        t = 0.0 if is_image(s["src"]) else s["in"] + s["dur"] * s.get("speed", 1.0) / 2
+        t = 0.0 if is_image(s["src"]) else s["in"] + src_elapsed(s, s["dur"] / 2)
         out.append((s["src"], t, f"{i:03d} {s['start']:6.1f}s {s['src']}", s))
     return out
 

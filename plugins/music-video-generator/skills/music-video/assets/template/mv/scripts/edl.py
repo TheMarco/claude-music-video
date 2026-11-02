@@ -11,9 +11,28 @@ GEN_TUNNEL). in_seconds is clamped so the shot never runs past its source.
 
 Shot options (all optional):
   speed=0.6        playback speed; below 0.85 uses motion-blended frames (dreamy slow motion)
+  ramp=(2.0, 0.25) speed ramp across the shot: speeds spread evenly over it, or (beat, speed) pairs
+                   from the shot's start, ramp=((0, 1.0), (1.5, 0.2), (4, 0.2)); 0 freezes. The classic:
+                   fast into the drop, slow motion on it. Overrides speed=
+  loop=0.5         the shot's footage repeats every 0.5 beats: a stutter on a snare roll or a riser
   rev=True         play backwards
-  x="dissolve", xd=2   transition INTO this shot: dissolve over xd beats
+  x=..., xd=1      transition INTO this shot from the one before, over xd beats (default per kind):
+                     "dissolve" (2)   cross-dissolve
+                     "dip" (1)        dip through black, or xcol=(1, 1, 1) for white; centred on the cut
+                     "whip" (0.5)     whip pan with motion blur, xdir="left"|"right"|"up"|"down" (the way
+                                      the picture travels); centred on the cut
+                     "zoom" (0.5)     zoom through with radial blur, xc=(x, y) its centre; centred
+                     "luma" (2)       the new shot appears in the old one's shadows first
+                     "burn" (1)       the new shot burns in through the highlights, xcol= edge colour
+                     "matte" (2)      the person in the old shot stays while the world turns into the
+                                      new one, then fades (needs a matte on the old shot)
+                     "matte_in" (2)   the new shot's person appears first, then their world
+                     "defocus" (1)    the old shot defocuses, the new one comes back into focus; centred
+                   plus any name in fx.py TRANSITIONS (default length 1 beat). Centred kinds switch
+                   shots on the beat; the others start on it and run into the new shot.
   x="glitch"       glitch burst on the cut;  x="flash", flash=0.6  white flash on the cut
+  ghost=0.7        trails of the person only: their last frames' silhouettes linger and fade (needs a
+                   matte; 0.6-0.9, higher lasts longer); dancers, spins, fast moves
   grade="mono"     a key of GRADES in look.py (defaults: AI_GRADE for AI clips, ARCHIVE_GRADE otherwise)
   expo=0.75        exposure multiplier on top of the grade (tame bright archive shots)
   zoom=(1.0, 1.1)  zoom from/to over the shot;  pan=((x0, y0), (x1, y1)) offset in frame units
@@ -44,6 +63,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from media import duration, is_ai, is_gen  # noqa: E402
+from motion import src_needed  # noqa: E402
 from timing import BEAT, DROPS, DUR, END, SECTIONS as SONG_SECTIONS, beat, beat_at  # noqa: E402,F401
 
 ROOT = Path("mv")
@@ -59,6 +79,11 @@ MAX_SOURCES = 4         # distinct sources in one song section before edl.py war
 
 DREAMY = dict(speed=0.7, echo=0.25)
 SLOW = dict(speed=0.55, echo=0.4)
+
+# Transition kinds and their default length in beats (see "x=" above)
+XDEFAULT = {"dissolve": 2, "dip": 1, "whip": 0.5, "zoom": 0.5, "luma": 2, "burn": 1, "matte": 2,
+            "matte_in": 2, "defocus": 1}
+CENTRED = {"dip", "whip", "zoom", "defocus"}
 
 
 def S(src, t_in, beats, **o):
@@ -101,16 +126,44 @@ def default_grade(src, start=0.0):
     return grade
 
 
+def custom_transitions():
+    try:
+        import fx
+    except Exception:   # an fx.py that doesn't import yet: only the built-in kinds
+        return {}
+    c = getattr(fx, "TRANSITIONS", [])
+    return {name: (c[name] if isinstance(c, dict) else "into") for name in c}
+
+
+def beats_to_s(start, beats):
+    """Seconds from song time start to beats later, on the real beat grid."""
+    return beat(beat_at(start) + beats) - start
+
+
 def seg_dict(src, t_in, dur, o, start=0.0):
     d = dict(src=src, dur=dur)
     d.update(o)
     d.setdefault("grade", default_grade(src, start))
     ai = src != "BLACK" and is_ai(src)
     d.setdefault("zoom", (1.0, 1.06) if ai else (1.04, 1.12))
-    need = dur * d.get("speed", 1.0) + 0.15
+    if d.get("ramp"):
+        r = list(d["ramp"])
+        if not isinstance(r[0], (tuple, list)):   # speeds spread evenly over the shot
+            nb = beat_at(start + dur) - beat_at(start)
+            r = [(nb * k / max(len(r) - 1, 1), v) for k, v in enumerate(r)]
+        d["ramp"] = [(round(beats_to_s(start, b), 4), float(v)) for b, v in r]
+        d.pop("speed", None)
+    if d.get("loop"):
+        d["loop"] = beats_to_s(start, d["loop"])
+    need = src_needed(d, dur) + 0.15
     d["in"] = max(0.0, min(t_in, (duration(src) if src != "BLACK" else 1e9) - need))
-    if d.get("x") == "dissolve":
-        d["xd"] = d["xd"] * BEAT
+    x = d.get("x")
+    if x and x not in ("glitch", "flash"):
+        custom = custom_transitions()
+        if x not in XDEFAULT and x not in custom:
+            sys.exit(f"unknown transition x={x!r} at {start:.2f}s: use one of "
+                     f"{', '.join(list(XDEFAULT) + list(custom))}, glitch or flash")
+        d["xd"] = d.get("xd", XDEFAULT.get(x, 1)) * BEAT
     return d
 
 
@@ -166,7 +219,7 @@ def report(segs, grades):
     warns = {}
     add = lambda kind, msg: warns.setdefault(kind, []).append(msg)
     lib = lambda s: s["src"] != "BLACK" and not is_gen(s["src"]) and not is_ai(s["src"])
-    span = lambda s: (s["in"], s["in"] + s["dur"] * s.get("speed", 1.0))
+    span = lambda s: (s["in"], s["in"] + src_needed(s, s["dur"]))
     shown = [s for s in segs if s["start"] < END - 0.01 and s["src"] != "BLACK"]
 
     used = {}
@@ -206,6 +259,25 @@ def report(segs, grades):
     print(f"{'all':12} {0:7.2f} {len(shown):5d} {avg:9.2f}")
     if not PACE_BEATS[0] <= avg <= PACE_BEATS[1]:
         add("pace", f"average shot {avg:.2f} beats, outside PACE_BEATS {PACE_BEATS} (SKILL.md, Phase 4)")
+    kinds = {}
+    for k, s in enumerate(segs):
+        x = s.get("x")
+        if not x:
+            continue
+        kinds[x] = kinds.get(x, 0) + 1
+        if "xd" not in s:
+            continue
+        half = s["xd"] / 2 if x in CENTRED else s["xd"]
+        prev = segs[k - 1] if k else None
+        if half > s["dur"] + 1e-3 or (x in CENTRED and prev and half > prev["dur"] + 1e-3):
+            add("transitions longer than the shots around them",
+                f"{s['start']:7.2f}s {x} over {s['xd'] / BEAT:g} beats into a {s['dur'] / BEAT:g}-beat shot")
+        if x in ("matte",) and prev and not (prev.get("matte") or (is_ai(prev["src"]) and (ROOT / "clips" / f"{prev['src']}_matte.mp4").exists())):
+            add("matte transitions without a matte (they fall back to a dissolve)", f"{s['start']:7.2f}s {prev['src']} has no matte")
+        if x == "matte_in" and not (s.get("matte") or (is_ai(s["src"]) and (ROOT / "clips" / f"{s['src']}_matte.mp4").exists())):
+            add("matte transitions without a matte (they fall back to a dissolve)", f"{s['start']:7.2f}s {s['src']} has no matte")
+    if kinds:
+        print("\ntransitions: " + ", ".join(f"{k} {v}" for k, v in sorted(kinds.items(), key=lambda kv: -kv[1])))
     for x, y in zip(shown, shown[1:]):
         if x.get("size") and x.get("size") == y.get("size"):
             add("neighbouring shots of the same size", f"{y['start']:7.2f}s {x['src']} -> {y['src']} both {y['size']}")
@@ -218,7 +290,8 @@ def report(segs, grades):
             continue
         a, b = span(s)
         native = m.get("sync")
-        if native is not None and s.get("speed", 1.0) == 1.0 and abs(s["start"] - s["in"] - native) <= 0.05:
+        plain = s.get("speed", 1.0) == 1.0 and not s.get("ramp") and not s.get("loop")
+        if native is not None and plain and abs(s["start"] - s["in"] - native) <= 0.05:
             continue   # a singing take shown where it was recorded
         if any(a >= x - 0.05 and b <= y + 0.05 for x, y in m.get("safe", [])):
             continue   # mouth closed or out of view in this stretch

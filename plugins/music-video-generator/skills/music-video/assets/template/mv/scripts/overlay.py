@@ -17,8 +17,20 @@ Helpers for fx.py, all sized in 1080p units so one design works at 16:9, 9:16, 1
                                                   line and word being sung at t
   audio arrays indexed by frame f: ov.spec (48 bands), ov.peaks (falling peak hold), ov.rms, ov.kick,
   ov.snare, ov.hat, ov.wave (256-sample waveform); onset times ov.kicks, ov.snares
-Module helpers: hash01(*key) for stable per-frame randomness, keyframes(t, [(t, v), ...]), and F / FS,
-the macOS system font folders.
+  ov.glyphs(text, font, track)                    [(char, x, width), ...] and the total width, for
+                                                  letters that move one by one
+  ov.streak(d, xy, v, width, fill, shutter=0.5)   a moving particle drawn as its motion-blur streak
+                                                  (v in pixels per second; 0.5 = a 180-degree shutter)
+  ov.track(name, ctx)                             (x, y) in pixels of a point tracked by track.py in the
+                                                  current shot, following its zoom, pan and shake; None
+                                                  in other shots or where the track is lost
+  ov.to_screen(ctx, x, y)                         pixels of any point of the current shot's frame
+                                                  (0..1 from the top left of the cut 16:9 segment)
+Module helpers: hash01(*key) for stable per-frame randomness, F / FS (the macOS system font folders),
+and from motion.py: keyframes(t, pts, ease), the easing curves (ease_out, ease_in, ease_in_out,
+ease_out_back, ease_out_expo, ease_in_expo, ease), since, hit and stagger.
+Draw everything from t (and f) alone, never from state kept between frames: --stills renders only a
+few frames around each still, so anything accumulated frame by frame would differ from the full render.
 """
 import json
 import random
@@ -30,6 +42,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent))
 from look import FINISH  # noqa: E402
+from motion import (ease, ease_in, ease_in_expo, ease_in_out, ease_out, ease_out_back,  # noqa: E402,F401
+                    ease_out_expo, hit, keyframes, linear, seg_time, seg_to_screen, since, stagger)
 from timing import FPS  # noqa: E402
 
 F = "/System/Library/Fonts/"                    # macOS system fonts
@@ -61,13 +75,6 @@ def hash01(*a):
     return random.Random(hash(a) & 0xFFFFFFFF).random()
 
 
-def keyframes(t, pts):
-    for (a, va), (b, vb) in zip(pts, pts[1:]):
-        if a <= t < b:
-            return va + (vb - va) * (t - a) / (b - a)
-    return pts[-1][1]
-
-
 class Overlay:
     def __init__(self, w, h, feats="mv/data/audio_feats.npz"):
         import fx  # here rather than at the top, so fx.py can import this module's helpers
@@ -84,6 +91,7 @@ class Overlay:
         self.peaks = self._peaks(self.spec)
         self.kicks = self._onsets(self.kick, 0.55, 0.22)
         self.snares = self._onsets(self.snare, 0.6, 0.18)
+        self._tracks = {}
 
     # ---- precompute -------------------------------------------------------
     @staticmethod
@@ -145,6 +153,59 @@ class Overlay:
             d.text((x, y), c, font=fnt, fill=fill, anchor="lm", stroke_width=stroke, stroke_fill=stroke_fill)
             x += wd + track
         return total
+
+    def glyphs(self, text, fnt, track=0.0):
+        """([(char, x, width), ...], total width): x of each letter from the start of the text."""
+        out, x = [], 0.0
+        for c in text:
+            w = fnt.getlength(c)
+            out.append((c, x, w))
+            x += w + track
+        return out, x - track if text else 0.0
+
+    def streak(self, d, xy, v, width, fill, shutter=0.5):
+        """A moving particle as film sees it: a streak from xy back along its velocity v (pixels per
+        second) for shutter / FPS seconds, with a round head. Rain, sparks and debris read as motion
+        this way; dots read as specks."""
+        x, y = xy
+        dx, dy = v[0] * shutter / FPS, v[1] * shutter / FPS
+        wd = max(1, int(round(width)))
+        d.line((x - dx, y - dy, x, y), fill=fill, width=wd)
+        r = width / 2
+        d.ellipse((x - r, y - r, x + r, y + r), fill=fill)
+
+    # ---- tracked points (track.py) -----------------------------------------
+    def _track(self, name):
+        if name not in self._tracks:
+            f = Path("mv/data/tracks") / f"{name}.json"
+            self._tracks[name] = json.loads(f.read_text()) if f.exists() else None
+        return self._tracks[name]
+
+    def track_seg(self, name, shot, local):
+        """Tracked point in the shot's cut frame (0..1 from the top left), or None."""
+        tr = self._track(name)
+        if not tr or not shot or Path(shot.get("file", "")).name != tr["file"]:
+            return None
+        pts = tr["points"]
+        x, y, ok = pts[min(max(int(round(seg_time(shot, local) * tr["fps"])), 0), len(pts) - 1)]
+        return (x, y) if ok else None
+
+    def track(self, name, ctx):
+        """(x, y) in output pixels of track NAME in the current shot, or None."""
+        p = self.track_seg(name, ctx.get("shot"), ctx.get("local", 0.0))
+        return None if p is None else self.to_screen(ctx, *p)
+
+    def track_uv(self, name, shot, local):
+        """The same in shader uv (0..1, y up), for fx.uniforms via a["track"](name)."""
+        p = self.track_seg(name, shot, local)
+        if p is None:
+            return None
+        x, y = seg_to_screen(shot, local, p[0], p[1], self.w / self.h)
+        return (x, 1.0 - y)
+
+    def to_screen(self, ctx, x, y):
+        sx, sy = seg_to_screen(ctx["shot"], ctx.get("local", 0.0), x, y, self.w / self.h)
+        return sx * self.w, sy * self.h
 
     def layer(self, canvas, fill, mask, scale):
         src = fill if isinstance(fill, Image.Image) else Image.new("RGB", canvas.size, fill)
