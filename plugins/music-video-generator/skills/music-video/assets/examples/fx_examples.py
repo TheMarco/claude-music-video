@@ -11,7 +11,7 @@ import math
 
 from PIL import ImageDraw  # noqa: F401  (handy for draw_* hooks)
 
-from timing import BEAT, DROPS
+from timing import BEAT, DROPS, HIT_LEAD
 
 UNIFORMS = {"leak": 0.0, "leakX": 0.5, "rim": 0.0}
 
@@ -43,8 +43,9 @@ def uniforms(t, a):
         "rim": 1.5 * a["kick"] if a["kick_level"] > 0.6 else 0.0,
     }
     for td in DROPS:   # 2. drop accent: overriding an engine uniform for one beat
-        if 0 <= t - td < BEAT:
-            out["ca"] = 0.03 * (1 - (t - td) / BEAT)
+        u = t + HIT_LEAD - td   # starts on the frame the drop's cut lands on
+        if 0 <= u < BEAT:
+            out["ca"] = 0.03 * (1 - u / BEAT)
     return out
 
 

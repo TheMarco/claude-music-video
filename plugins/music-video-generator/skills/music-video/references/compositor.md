@@ -83,9 +83,28 @@ map. Use `beat(k)` for the time of beat k and `beat_at(t)` for the beat index at
 `t0 + k * BEAT` by hand, because that breaks on drifting songs. `BEAT` is only the average beat length,
 fine for easing and dissolve lengths. Also in `timing.py`: `SECTIONS` (start, end, name, kick, calm),
 `section(t)`, `is_calm(t)`, `beat_phase(t)`, `DROPS`, `SHOCKS`, `COUNTDOWNS` (8 beats before a drop),
-`LETTERBOX` (the analyzer's suggestion), `END` (end card), `TITLE`, `ARTIST`. After `END` the picture is
-whatever the EDL has there: `edl.py` appends a BLACK tail when the edit stops at `end`, and `fx.py` can
-draw the end card in either pass. Extend the edit past `end` to run footage under the end card.
+`LETTERBOX` (the analyzer's suggestion), `END` (end card), `TITLE`, `ARTIST`, and `bar_line(t)` (the
+bar line nearest t). After `END` the picture is whatever the EDL has there: `edl.py` appends a BLACK
+tail when the edit stops at `end`, and `fx.py` can draw the end card in either pass. Extend the edit
+past `end` to run footage under the end card.
+
+**The picture never trails the sound.** Viewers notice sound that arrives before its picture sooner
+than sound that arrives after it, so cuts, the beat pulse, drop flashes, shocks and section changes
+are shown on the video frame at or before their song time: `edl.py` writes cut times on frames
+(`on_frame(s)`), and the engine reads beats with `hit_phase(t)` and sections at `t + HIT_LEAD`. In
+`fx.py`, anything meant to land with a cut follows the same rule. `a["beat"]`, `a["phase"]`,
+`a["section"]`, `a["kick_level"]` and `ov.kick_level(t)` already do; for your own timing, compare `t`
+with `on_frame(beat(k))` and look sections up with `section(t + HIT_LEAD)`. A plain `t >= beat(k)` or
+`section(t)` switches up to a frame after the cut. Lyrics, audio-reactive values and lipsync shots stay
+on song time. An `fx.py` written before this rule (engine 1.1.0 and earlier) can adopt it
+with four lines after its `from timing import ...` line, which has to import `beat` and `section`:
+
+```python
+from timing import HIT_LEAD, on_frame
+_song_beat, _song_section = beat, section
+def beat(k): return on_frame(_song_beat(k))
+def section(t): return _song_section(t + HIT_LEAD)
+```
 
 These are facts about the song. Nothing happens at a drop or countdown unless `look.py` (`drop_flash`,
 `shock`) or `fx.py` makes it happen.
