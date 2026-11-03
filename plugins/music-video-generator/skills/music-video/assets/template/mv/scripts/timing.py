@@ -61,6 +61,27 @@ def beat_at(t):
     return i + (t - BEATS[i]) / (BEATS[i + 1] - BEATS[i])
 
 
+# The picture may lead the sound but never trails it: viewers notice sound that arrives before its
+# picture sooner than sound that arrives after it. So a cut or beat hit at song time s is shown on the
+# video frame at or before s, not the first frame after it.
+HIT_LEAD = (1 - 1e-6) / FPS
+
+
+def on_frame(s):
+    """Time of the video frame that shows an event at song time s: the frame at or before it."""
+    return math.floor(s * FPS + 1e-6) / FPS
+
+
+def hit_phase(t):
+    """beat_phase for picture hits: a beat registers on the frame at or before it (see HIT_LEAD)."""
+    return beat_phase(t + HIT_LEAD)
+
+
+def bar_line(t):
+    """Time of the bar line (every 4 beats from beat 0, as analyze_song.py counts bars) nearest t."""
+    return beat(round(beat_at(t) / 4) * 4)
+
+
 def section(t):
     """(name, kick, start, end) of the section at time t."""
     for a, b, name, kick, _ in SECTIONS:

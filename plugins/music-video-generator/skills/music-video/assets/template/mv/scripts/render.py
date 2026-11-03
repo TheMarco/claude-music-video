@@ -1,7 +1,10 @@
 """GPU compositor for a music video.
 
 Usage:
-  .venv/bin/python mv/scripts/render.py OUT.mp4 [--size 1920x1080] [--start S] [--end E] [--stills T1,T2,...]
+  .venv/bin/python mv/scripts/render.py OUT.mp4 [--size 1920x1080] [--start S] [--end E] [--exact] [--stills T1,T2,...]
+  --start/--end render part of the song (a hook for Reels, TikTok or Shorts). Both move to the nearest
+  bar line, so the cut runs whole bars and a platform's auto-replay restarts on the beat; --exact keeps
+  the times as given. The audio of a part gets a 3 ms fade at each cut edge so it doesn't click.
   --size 1080x1920 (vertical), 1080x1080 or 1080x1350 for social cuts: sources stay 16:9 and the frame
   shows the middle of them; shots with a person matte are reframed on the person automatically, and
   pan=((x, 0), (x, 0)) in the EDL reframes any other shot. Letterbox is skipped for non-wide output.
@@ -42,7 +45,8 @@ from media import GEN_IDS, crop_for, is_ai, is_gen, is_image, matte_path, src_pa
 import fx  # noqa: E402
 from look import FINISH, GRADES, PALETTES, SHADOW_TINT  # noqa: E402
 from overlay import Overlay  # noqa: E402
-from timing import BEAT, DROPS, DUR, END, FPS, SHOCKS, SONG, beat_phase, is_calm, section  # noqa: E402
+from timing import (BEAT, DROPS, DUR, END, FPS, HIT_LEAD, SHOCKS, SONG, bar_line, beat_at, hit_phase,  # noqa: E402
+                    is_calm, on_frame, section)
 
 ROOT = Path("mv")
 SEG = ROOT / "work" / "seg"
@@ -466,6 +470,20 @@ def subject_x(mfile):
     return float((col * (np.arange(96) + 0.5) / 96).sum() / col.sum()) if col.sum() > 50 else 0.5
 
 
+def snap_edl(edl):
+    """Put every cut on the frame at or before its time (timing.on_frame). edl.py already writes it that
+    way; this only changes an edl.json built by an older edl.py."""
+    main = edl["main"]
+    for s in main:
+        s["start"] = on_frame(s["start"])
+    for a, b in zip(main, main[1:]):
+        a["dur"] = b["start"] - a["start"]
+    for s in edl.get("over", []):
+        end = on_frame(s["start"] + s["dur"])
+        s["start"] = on_frame(s["start"])
+        s["dur"] = end - s["start"]
+
+
 def find(segs, t):
     lo, hi = 0, len(segs) - 1
     best = None
@@ -485,6 +503,7 @@ def main():
     ap.add_argument("--end", type=float, default=DUR)
     ap.add_argument("--size", default="1920x1080", help="WxH, e.g. 1080x1920 for vertical")
     ap.add_argument("--stills", default="")
+    ap.add_argument("--exact", action="store_true", help="keep --start/--end as given, not on bar lines")
     args = ap.parse_args()
 
     W, H = map(int, args.size.lower().split("x"))
@@ -496,12 +515,21 @@ def main():
     FINAL = (FINAL.replace("ASP_VALUE", f"{out_asp:.6f}").replace("GRAIN_RES", f"vec2({W * k:.1f}, {H * k:.1f})")
              .replace("SCAN_RES", f"{H * k:.1f}"))
     edl = json.loads((ROOT / "data" / "edl.json").read_text())
+    snap_edl(edl)
     SEG.mkdir(parents=True, exist_ok=True)
     jobs = build_jobs(edl)
     t0, t1 = args.start, min(args.end, DUR)
     stills = [float(x) for x in args.stills.split(",") if x]
+    part = not stills and (t0 > 0 or t1 < DUR)
     if stills:
         t0, t1 = min(stills), max(stills) + 0.05
+    elif part and not args.exact:
+        a, b = (bar_line(t0) if t0 > 0 else 0.0), (min(bar_line(t1), DUR) if t1 < DUR else DUR)
+        if b <= a:
+            sys.exit(f"--start {t0} and --end {t1} snap to the same bar line; give a longer span or --exact")
+        t0, t1 = a, b
+        print(f"part {t0:.3f}-{t1:.3f} s: {(beat_at(t1) - beat_at(t0)) / 4:g} bars (bar lines nearest "
+              f"--start/--end; --exact keeps the times as given)", flush=True)
     main_segs, over_segs = edl["main"], edl.get("over", [])
 
     def needed(s):
@@ -573,15 +601,24 @@ def main():
     ov = Overlay(W, H)
     mt, ot = Track(main_segs), Track(over_segs)
     enc = None
+    f0, f1 = int(round(t0 * FPS)), int(round(t1 * FPS))
+    a0, alen, afx = t0, t1 - t0, []
+    if part:  # the audio starts and ends exactly with the picture, on the frame at or before each bar line
+        f0, f1 = (math.floor(x * FPS + 1e-6) for x in (t0, t1))
+        a0, alen = f0 / FPS, (f1 - f0) / FPS
+        if t0 > 0:
+            afx.append("afade=t=in:st=0:d=0.003:curve=hsin")
+        if t1 < DUR:
+            afx.append(f"afade=t=out:st={alen - 0.003:.6f}:d=0.003:curve=hsin")
     if not stills:
         enc = subprocess.Popen([
             "ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}",
-            "-r", str(FPS), "-i", "-", "-ss", f"{t0:.3f}", "-t", f"{t1 - t0:.3f}", "-i", SONG,
+            "-r", str(FPS), "-i", "-", "-ss", f"{a0:.6f}", "-t", f"{alen:.6f}", "-i", SONG,
             "-map", "0:v", "-map", "1:a", "-c:v", "libx264", "-preset", "slow", "-crf", "19",
-            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "320k", "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p", *(["-af", ",".join(afx)] if afx else []),
+            "-c:a", "aac", "-b:a", "320k", "-movflags", "+faststart",
             "-shortest", args.out], stdin=subprocess.PIPE)
 
-    f0, f1 = int(round(t0 * FPS)), int(round(t1 * FPS))
     ping = 0
     for fi in range(f0, f1):
         t = fi / FPS
@@ -625,8 +662,11 @@ def main():
                 oc = cand.get("op", 0.5) * min(1, ol / fin) * min(1, (cand["dur"] - ol) / fin)
         ot.gc({osg["file"]} if osg else set())
 
-        name, kick, sa_t, sb_t = section(t)
-        since, bk = beat_phase(t)
+        # beat hits, drop flashes, shocks and section changes start on the frame at or before their time,
+        # the frame the cut on them lands on (timing.HIT_LEAD)
+        th = t + HIT_LEAD
+        name, kick, sa_t, sb_t = section(th)
+        since, bk = hit_phase(t)
         kenv = max(0.6 * kick * math.exp(-since / 0.11), min(1.0, kick * 1.2) * float(a_kick[min(fi, len(a_kick) - 1)]))
         hat = float(a_hat[min(fi, len(a_hat) - 1)])
         loud = float(a_rms[min(fi, len(a_rms) - 1)])
@@ -641,12 +681,12 @@ def main():
         if seg.get("x") == "flash" and local < 0.25:
             flash = (1 - local / 0.25) ** 2 * seg.get("flash", 0.85)
         for td in (DROPS if FINISH["drop_flash"] else []):
-            if 0 <= t - td < 0.55:
-                flash = max(flash, FINISH["drop_flash"] * (1 - (t - td) / 0.55) ** 2)
+            if 0 <= th - td < 0.55:
+                flash = max(flash, FINISH["drop_flash"] * (1 - (th - td) / 0.55) ** 2)
         shockT, shockAmp = 0.0, 0.0
         for td, amp in (SHOCKS if FINISH["shock"] else []):
-            if 0 <= t - td < 1.3:
-                shockT, shockAmp = (t - td) / 1.3, FINISH["shock"] * amp * (1 - (t - td) / 1.3)
+            if 0 <= th - td < 1.3:
+                shockT, shockAmp = (th - td) / 1.3, FINISH["shock"] * amp * (1 - (th - td) / 1.3)
         lb = 0.0
         for a, b in (FINISH["letterbox"] if out_asp > 1.5 else []):
             lb = max(lb, ease((t - a + BEAT) / BEAT) * ease((b - t) / BEAT) if a - BEAT <= t <= b else 0.0)
@@ -654,7 +694,7 @@ def main():
         if END <= t:
             fade = 1.0
         ai = seg["src"] != "BLACK" and is_ai(seg["src"])
-        calm = is_calm(t)
+        calm = is_calm(th)
 
         # pass 1
         p1["tA"], p1["tB"], p1["tC"], p1["tPrev"], p1["tMA"], p1["tMB"] = 0, 1, 2, 3, 4, 5

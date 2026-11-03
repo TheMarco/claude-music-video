@@ -44,7 +44,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from media import duration, is_ai, is_gen  # noqa: E402
-from timing import BEAT, DROPS, DUR, END, SECTIONS as SONG_SECTIONS, beat, beat_at  # noqa: E402,F401
+from timing import BEAT, DROPS, DUR, END, SECTIONS as SONG_SECTIONS, beat, beat_at, on_frame  # noqa: E402,F401
 
 ROOT = Path("mv")
 ARCHIVE_GRADE = "base"  # default grade for archive, library and photo shots (a key of GRADES in look.py)
@@ -96,7 +96,7 @@ def default_grade(src, start=0.0):
     ai = is_ai(src)
     grade = AI_GRADE if ai else ARCHIVE_GRADE
     for t, g in (AI_STORY_GRADES if ai else STORY_GRADES):
-        if start >= t - 0.01:
+        if on_frame(start) >= on_frame(t - 0.01):  # compared as frames, since cuts sit on frames
             grade = g
     return grade
 
@@ -133,7 +133,7 @@ def main():
     for start_beat, shots in SECTIONS:
         b = start_beat
         for src, t_in, beats, o in shots:
-            start = beat(b) if b else 0.0
+            start = on_frame(beat(b)) if b else 0.0  # the cut lands on the frame at or before its beat
             if "sync" in o:  # lipsync: play the clip so its audio lines up with the song
                 t_in = start - o["sync"]
             s = seg_dict(src, t_in, beats * BEAT, o, start)
@@ -144,8 +144,9 @@ def main():
         a["dur"] = nxt["start"] - a["start"]
     over = []
     for sb, beats, src, t_in, o in OVER:
-        s = seg_dict(src, t_in, beats * BEAT, o, beat(sb))
-        s["start"] = beat(sb)
+        start = on_frame(beat(sb))
+        s = seg_dict(src, t_in, on_frame(beat(sb + beats)) - start, o, start)
+        s["start"] = start
         over.append(s)
     from look import GRADES
     unknown = sorted({s["grade"] for s in main_segs + over} - set(GRADES))
@@ -167,7 +168,7 @@ def report(segs, grades):
     add = lambda kind, msg: warns.setdefault(kind, []).append(msg)
     lib = lambda s: s["src"] != "BLACK" and not is_gen(s["src"]) and not is_ai(s["src"])
     span = lambda s: (s["in"], s["in"] + s["dur"] * s.get("speed", 1.0))
-    shown = [s for s in segs if s["start"] < END - 0.01 and s["src"] != "BLACK"]
+    shown = [s for s in segs if on_frame(s["start"]) < on_frame(END - 0.01) and s["src"] != "BLACK"]
 
     used = {}
     for s in shown:
@@ -181,7 +182,7 @@ def report(segs, grades):
         used.setdefault(s["src"], []).append((a, b, s["start"]))
 
     look = lambda g: (grades[g][1] if grades[g][0] > 0.05 else -1, grades[g][2] < 0.05)
-    turn = lambda t: sum(t >= x - 0.01 for x, _ in STORY_GRADES)
+    turn = lambda t: sum(on_frame(t) >= on_frame(x - 0.01) for x, _ in STORY_GRADES)
     prev = None
     for s in (x for x in shown if lib(x)):
         if prev and look(s["grade"]) != look(prev["grade"]) and turn(s["start"]) == turn(prev["start"]):
@@ -191,7 +192,7 @@ def report(segs, grades):
 
     print(f"\n{'section':12} {'start':>7} {'cuts':>5} {'beats/cut':>9} {'sources':>7}")
     for a, b, name, _, _ in SONG_SECTIONS:
-        sec = [s for s in shown if a - 0.01 <= s["start"] < b - 0.01]
+        sec = [s for s in shown if on_frame(a - 0.01) <= on_frame(s["start"]) < on_frame(b - 0.01)]
         if not sec:
             continue
         srcs = sorted({s["src"] for s in sec})

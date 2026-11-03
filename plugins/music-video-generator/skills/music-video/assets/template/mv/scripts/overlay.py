@@ -161,9 +161,10 @@ class Overlay:
         return self._grad[key]
 
     def kick_level(self, t):
-        """The section's kick level at t (0 calm .. 1 peak), for gating effects by energy."""
-        from timing import section
-        return section(t)[1]
+        """The section's kick level at t (0 calm .. 1 peak), for gating effects by energy. Like the engine, it
+        switches on the frame at or before the section's start, the frame its first cut lands on."""
+        from timing import HIT_LEAD, section
+        return section(t + HIT_LEAD)[1]
 
     def letterboxed(self, t):
         return self.wide and any(a <= t < b for a, b in FINISH["letterbox"])

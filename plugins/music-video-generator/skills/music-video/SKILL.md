@@ -45,7 +45,7 @@ Every request uses the same pipeline; the request type decides which phases matt
 | Lyric video | any backgrounds | Confirmed lyrics; line and word timings from `ov.lyric_at(t)`; a type treatment designed for the song |
 | Performance / lipsync | AI lipsync clips | `references/video-providers.md` "Lipsync": one take per sung line, shown only where it was recorded; `sync_offset.py --save`, `mouth_check.py`, `mv/data/mouths.json` |
 | Photo or album-art video | stills in `codes.json` | Slow zoom and pan per shot; grades; overlays between photos |
-| Vertical or square cut, teaser | an existing edit | `render.py --size 1080x1920` (matted shots reframe on the person); `--start/--end` for a 15-30 s hook |
+| Vertical or square cut, teaser | an existing edit | `render.py --size 1080x1920` (matted shots reframe on the person); `--start/--end` for a 15-30 s hook (see Phase 6) |
 | The user's own footage | local files in `codes.json` | Same as archive; check framing with contact sheets |
 | Changes to an existing project | whatever it has | Read the project's notes first; see "Updating a project's engine" if its scripts are older than the template |
 
@@ -149,7 +149,11 @@ the project root.
 
 When a project's `mv/scripts/` is older than the template, copy `mv/scripts/` to `mv/scripts_old/`, then
 copy the template's engine files over everything except the project's own `edl.py`, `look.py` and
-`fx.py`. Render stills at 4-6 moments with both and compare before changing anything else.
+`fx.py`. The part of `edl.py` below its EDIT block is engine too: carry the template's changes there
+into the project's copy, keeping any project additions, and re-run `edl.py`. A project from engine
+1.1.0 or earlier also needs the four-line `fx.py` change in `references/compositor.md` ("The picture
+never trails the sound"), or its beat-timed accents land a frame after the cuts. Render stills at 4-6
+moments with both and compare before changing anything else.
 
 ## Phase 2: the song
 
@@ -351,6 +355,7 @@ lines returns unless the user asks.
 .venv/bin/python mv/scripts/beatsheet.py mv/out/<name>_v1.mp4 mv/work/drop1.jpg <drop_time> 32   # one frame per beat
 .venv/bin/python mv/scripts/render.py mv/out/<name>_v1.mp4                         # full render
 .venv/bin/python mv/scripts/render.py mv/out/<name>_9x16.mp4 --size 1080x1920      # vertical cut
+.venv/bin/python mv/scripts/render.py mv/out/<name>_hook.mp4 --size 1080x1920 --start <drop> --end <8 or 16 bars later>
 .venv/bin/python mv/scripts/qc.py mv/out/<name>_v1.mp4 --ignore-after <end>
 ```
 Look at still sheets before every full render: the y-flip, palette and exposure mistakes all show up
@@ -358,6 +363,12 @@ there, and `sheet.py` prints each still's tones (Phase 5, step 9). A three-and-a
 takes a few minutes on a recent Apple Silicon Mac; segments are cached in `mv/work/seg/` (delete a
 clip's segments there after replacing the clip). Fine grain raises the bitrate: expect about 900 MB for
 three and a half minutes at CRF 19 with heavy grain.
+
+**Hooks for Reels, TikTok and Shorts.** These platforms replay a video in a loop, so a hook should
+start on a downbeat and run whole bars: `--start` and `--end` move to the nearest bar line (`--exact`
+keeps the times as given), and the audio gets a 3 ms fade at each edge so it doesn't click. Feeds
+show the first frame before playback starts, so start on a strong full-frame shot, not black or the
+middle of a dissolve. Eight or sixteen bars from a drop usually work.
 
 ## Phase 7: report and history
 
