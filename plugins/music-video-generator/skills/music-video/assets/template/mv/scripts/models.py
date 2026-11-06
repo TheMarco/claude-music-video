@@ -1,9 +1,7 @@
 """Model files for lyrics transcription and person mattes, downloaded anonymously.
 
-The libraries' own downloaders pick up saved logins: huggingface_hub (used by mlx-whisper) sends a
-saved Hugging Face token, and pooch (used by rembg) goes through requests, which reads ~/.netrc. This
-module fetches the same public files with Python's standard HTTP client instead. It sends no
-credentials and checks every file against a pinned SHA-256.
+Fetches the public model files with Python's standard HTTP client (plain GET requests, no extra
+headers) instead of the libraries' own downloaders, and checks every file against a pinned SHA-256.
 
     whisper_dir()      mlx-community/whisper-large-v3-turbo (about 1.6 GB) from huggingface.co, kept in
                        ~/.cache/music-video/models/ and shared by all projects
@@ -47,7 +45,7 @@ def fetch(url, out, sha256):
 
 
 def whisper_dir():
-    """Local folder holding the Whisper model; pass it to mlx_whisper as path_or_hf_repo."""
+    """Local folder holding the Whisper model; pass it to mlx_whisper.transcribe."""
     d = CACHE / WHISPER_REPO.replace("/", "--") / WHISPER_REV
     for name, sha in WHISPER_FILES.items():
         fetch(f"https://huggingface.co/{WHISPER_REPO}/resolve/{WHISPER_REV}/{name}", d / name, sha)

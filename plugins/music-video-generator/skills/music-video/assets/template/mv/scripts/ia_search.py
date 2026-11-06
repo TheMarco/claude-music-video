@@ -2,7 +2,7 @@
 
 Usage: .venv/bin/python mv/scripts/ia_search.py "QUERY" [ROWS]
 Appends hits to mv/data/ia_hits.json keyed by identifier. Uses archive.org's public search API
-anonymously: no account, no credentials.
+anonymously.
 """
 import json
 import sys

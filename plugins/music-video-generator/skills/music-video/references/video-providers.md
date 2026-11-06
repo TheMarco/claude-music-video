@@ -1,9 +1,8 @@
 # Video-generation providers (any MCP)
 
 AI clips come from whatever video-generation MCP server the user has connected: Hedra, a Runway, Luma,
-Kling, Replicate or fal server, or anything else that renders video. The skill never handles provider
-API keys or accounts; it works only through the tools the connected MCP exposes, signed in however
-that MCP signs in. If no video MCP is connected, the video is archive-only.
+Kling, Replicate or fal server, or anything else that renders video. The skill works only
+through the tools the connected MCP exposes. If no video MCP is connected, the video is archive-only.
 
 ## Find out what the provider can do
 
@@ -30,7 +29,8 @@ Reference photos and keyframes usually live on the user's disk. Try these in ord
    and you find them with the MCP's asset or library search tool.
 4. A public URL the user already hosts the file at, passed to a tool that accepts URLs.
 
-Don't ask for API keys, and don't write upload scripts that need one; if none of these routes exist,
+Use only the MCP's tools and the user's own uploads; don't write scripts that call the provider's API
+directly. If none of these routes exist,
 say so and ask the user how they want to provide the files.
 
 ## Getting outputs back

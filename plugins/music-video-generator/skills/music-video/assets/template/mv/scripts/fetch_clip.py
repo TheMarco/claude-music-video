@@ -4,7 +4,7 @@ Usage: python3 -I mv/scripts/fetch_clip.py OUT_PATH URL          (run from the p
        python3 -I mv/scripts/fetch_clip.py OUT_PATH @URL_FILE    (the URL read from a text file)
 
 Works with any provider whose tools return a downloadable URL (public, or presigned with its signature
-in the URL). It sends no credentials and only writes inside mv/, e.g. mv/clips/P1.mp4 or
+in the URL). It sends a plain GET request and only writes inside mv/, e.g. mv/clips/P1.mp4 or
 mv/keyframes/P1.png. Presigned URLs are often 1,000-2,000 characters long and break when retyped: save
 the URL to a file exactly as the tool returned it and pass @file. A 403 usually means a damaged or
 expired URL; fetch a fresh one from the provider's tools.

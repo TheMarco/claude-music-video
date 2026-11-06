@@ -2,7 +2,7 @@
 
 Usage: .venv/bin/python mv/scripts/ia_fetch.py ID [ID ...]
 Files land in mv/archive/<id>/; item metadata goes to mv/archive/<id>/meta.json. Uses archive.org's
-public metadata and download URLs anonymously: no account, no credentials.
+public metadata and download URLs anonymously.
 """
 import hashlib
 import json

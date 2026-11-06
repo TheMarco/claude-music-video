@@ -5,7 +5,7 @@ Any local video or image works as a source: give it a code in `mv/data/codes.jso
 - NASA (images.nasa.gov, NASA YouTube originals): public domain, great for cosmic and ambient looks.
 - Library of Congress and the U.S. National Archives: public domain government film.
 - Wikimedia Commons: check the license on each file; CC-BY needs a credit.
-- Pexels and Pixabay: free licenses for modern stock clips; downloads need their sites or API keys.
+- Pexels and Pixabay: free licenses for modern stock clips; download them from their own sites.
 - The user's own footage, photos and album art.
 Avoid British Pathé, Getty and news archives unless the user has a license; uploads of TV shows or films
 on any site are not free to use.
@@ -15,7 +15,7 @@ on any site are not free to use.
 ## Searching
 
 `ia_search.py` and `ia_fetch.py` use archive.org's public search, metadata and download URLs
-anonymously, with no account or credentials, and Python's standard HTTP client. Don't change the
+anonymously, with Python's standard HTTP client. Don't change the
 User-Agent or retry with other ones if archive.org refuses a request: that counts as getting around its
 bot checks.
 

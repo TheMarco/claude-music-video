@@ -20,7 +20,7 @@ def matte_video(clip, out, log=True):
     from rembg import new_session, remove
     if _sess is None:
         from models import human_seg_path
-        human_seg_path()  # anonymous download first; rembg's own downloader reads ~/.netrc
+        human_seg_path()  # plain anonymous download into rembg's folder, so rembg never downloads
         _sess = new_session("u2net_human_seg")
     clip, out = Path(clip), Path(out)
     w, h = map(int, subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",

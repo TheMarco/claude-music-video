@@ -16,9 +16,8 @@ ones.
 - Python 3.10-3.13 and ffmpeg on the PATH
 - A GPU with OpenGL 3.3 (the compositor uses moderngl)
 - Optional: any video-generation MCP server (Hedra, Runway, Luma, Kling, Replicate, fal or others) if
-  you want AI-generated performer clips, plus credits with that provider. The plugin holds no API keys:
-  it uses whatever MCP you have connected, signed in your way. Archive-only videos need no provider and
-  cost nothing.
+  you want AI-generated performer clips, plus credits with that provider. The plugin works only through the tools
+  of the MCP you have connected. Archive-only videos need no provider and cost nothing.
 
 It runs in Claude Code on your own computer. In claude.ai chat or Cowork the skill can load but can't
 render, since those have no local Python, ffmpeg or GPU.
@@ -51,8 +50,7 @@ accepted videos lives in `~/.claude/music-video/`.
 ## What it runs and where data goes
 
 Everything runs on your machine: Python scripts copied into each project, ffmpeg, and a GPU compositor.
-The plugin reads no API keys, tokens or logins.
-Network access:
+Every request the scripts make is anonymous. Network access:
 - archive.org: searching and downloading public-domain and openly licensed films, anonymously
   (`ia_search.py`, `ia_fetch.py`)
 - your video-generation MCP, only through its own tools: prompts, and the reference photos you choose
