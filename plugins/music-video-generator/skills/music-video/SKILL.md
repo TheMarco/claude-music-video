@@ -75,6 +75,10 @@ These matter more than any technique below.
 - **Text is sparse.** Running subtitles belong in lyric videos, when asked.
 - **Grain, when a look uses it, has to read as film, not digital noise.** The engine's grain does this
   (clumped, per dye layer, midtone weighted).
+- **Never "fix" original footage with someone singing.** When the song is an existing video's own
+  soundtrack, the singer's shots play at exactly their original times (`sync=0`) with the original
+  audio: no lip-sync measurement, no offsets. If the user reports it out of sync, check that the shots
+  sit at their original times and ask whether the original plays in sync for them; build nothing.
 
 ## Phase 0: the brief
 
