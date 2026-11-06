@@ -4,10 +4,11 @@ Usage:
   .venv/bin/python mv/scripts/lip_check.py CODE SONG_TIME [SONG_TIME ...] [--span 2.5] [--sync S]
   .venv/bin/python mv/scripts/lip_check.py CODE --save OFFSET
 
-Needed whenever a singer's mouth is on screen: lipsync takes, the user's own performance footage, and
-an existing music video cut against its own soundtrack. A source's picture can run ahead of or behind
-its own sound; downloads and re-encodes of existing videos often do, by a third of a second or more,
-and placing shots at their exact source times then copies the offset into the edit.
+For lipsync takes and the user's own performance footage, when a mouth looks off. A source's picture can
+run ahead of or behind its own sound after downloads and re-encodes. Set an offset only when the user
+sees the source itself play out of sync: an existing music video that plays in sync for the user is
+placed with sync=0 and needs none. Whisper's word timings on sung vocals can be a third of a second off,
+so read these strips as a guide, not proof.
 
 For each SONG_TIME it transcribes 8 s of the song around it with Whisper (word timings are more
 reliable on a short slice than on the whole song) and writes mv/work/lips_<CODE>_<time>.jpg: every
@@ -19,10 +20,10 @@ that start with m, b or p are in capitals: the lips close at their start.
 
 Positive means the picture runs ahead (the mouth moves before the sound). Add it to the current
 av_offset, save the sum with --save, and run again: the lips should now close on the m, b and p words.
-Check three points (start, middle, end of the song) on lit, frontal close-ups. A constant offset is a
-property of the file; one that changes along the song is drift, and drifting stretches need their own
-sync per shot. Automatic mouth-to-vocal correlation is unreliable on soft or stylized footage; read the
-strips.
+Check three points (start, middle, end of the song) on lit, frontal close-ups, and confirm with the user
+watching the source. A constant offset is a property of the file; one that changes along the song is
+drift, and drifting stretches need their own sync per shot. Automatic mouth-to-vocal correlation is
+unreliable on soft or stylized footage.
 
 --save writes "av_offset" under the source's file name in mv/data/mouths.json, so every code that crops
 the same file gets it; edl.py applies it to every shot with sync=.

@@ -47,7 +47,7 @@ Every request uses the same pipeline; the request type decides which phases matt
 | Photo or album-art video | stills in `codes.json` | Slow zoom and pan per shot; grades; overlays between photos |
 | Vertical or square cut, teaser | an existing edit | `render.py --size 1080x1920` (matted shots reframe on the person); `--start/--end` for a 15-30 s hook (see Phase 6) |
 | The user's own footage | local files in `codes.json` | Same as archive; check framing with contact sheets |
-| Remake of an existing music video | the original video plus new footage | The original's soundtrack is the song (keep its audio stream unchanged in the final file); the singer appears only at his own song times (`sync=0`) after measuring the file's picture/audio offset with `lip_check.py` (Phase 6, "Lip sync"); anything the user excludes (a person, a logo) checked on every shot's full visible span (Phase 4) |
+| Remake of an existing music video | the original video plus new footage | The original's soundtrack is the song (keep its audio stream unchanged in the final file); the singer appears only at his own song times (`sync=0`), exactly as in the original: no lip-sync adjustment (Phase 6, "Lip sync"); anything the user excludes (a person, a logo) checked on every shot's full visible span (Phase 4) |
 | Changes to an existing project | whatever it has | Read the project's notes first; see "Updating a project's engine" if its scripts are older than the template |
 
 ## Working rules
@@ -228,9 +228,8 @@ labeled thumbnails and pick in-points. Black bars are cropped automatically; ove
 for close-ups and centered for wides); `edl.py` counts reuse per file.
 
 Footage where a singer's mouth is on screen (an existing music video, the user's performance footage,
-concert film) is placed with `sync=` like a lipsync take, and its own picture can run ahead of or behind
-its sound: downloads and re-encodes often carry a third of a second or more. Measure it with
-`lip_check.py` and store it as `av_offset` before placing singing shots (Phase 6, "Lip sync").
+concert film) is placed with `sync=` like a lipsync take: an existing video cut against its own
+soundtrack uses `sync=0`, which shows every frame at its own time, exactly as the original plays.
 
 ## Phase 4: the edit
 
@@ -385,22 +384,14 @@ takes a few minutes on a recent Apple Silicon Mac; segments are cached in `mv/wo
 clip's segments there after replacing the clip). Fine grain raises the bitrate: expect about 900 MB for
 three and a half minutes at CRF 19 with heavy grain.
 
-**Lip sync.** Before delivering anything that shows a singing mouth, check it against the vocal; a frame
-comparison only proves the render reproduces its source, not that the source was in sync. A remake of a
-1984 video went out with the singer 0.36 s ahead of his voice in every shot because the downloaded
-original carried that offset and nothing compared mouth to vocal.
-
-```bash
-.venv/bin/python mv/scripts/lip_check.py CODE 25.6 133 200     # mouth strips at three song times
-.venv/bin/python mv/scripts/lip_check.py CODE --save 0.36      # store the offset, then rerun edl.py
-```
-Pick song times where the singer is in a lit, frontal close-up on screen. Each strip labels every frame
-with the song time it plays at and the word sung there; words starting with m, b or p are in capitals,
-and the lips close at their start. Offset = word start minus the song time where the lips close
-(positive: the picture runs ahead). Save it, rerun `edl.py`, rerun the strips: the lips should now close
-on those words at all three points. A constant offset belongs to the file (`av_offset`, applied to every
-`sync` shot of it); one that grows along the song is drift and needs `sync` per stretch. Automatic
-mouth-to-vocal correlation was unreliable on soft, stylized footage; read the strips.
+**Lip sync.** When the song is an existing video's own soundtrack and the user sees that video play in
+sync, its timing is final: singing shots at their own song times (`sync=0`), no offset. Don't "correct"
+it from a measurement. Whisper's word timings on sung vocals can be off by a third of a second, enough to
+make a source that plays in sync look 0.36 s early on a strip read against them; a remake was shifted by
+exactly that and the user, who saw the original in sync, had to undo it. `lip_check.py` strips help place
+a lipsync take or check the user's own footage, and `av_offset` (`lip_check.py CODE --save SECONDS`) is
+for a source the user sees out of sync when it plays on its own. Ask the user to watch the source before
+setting one.
 
 When the song is a video's own soundtrack, keep that audio unchanged in the final file: the render
 encodes the song as AAC, so put the original stream back with
