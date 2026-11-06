@@ -25,25 +25,31 @@ Shot options (all optional):
   size="W"         shot size: W wide, M medium, C close, X extreme close; edl.py then warns on neighbours
                    of the same size and on sections that don't open wide
   motif=True       a deliberate repeat of footage used elsewhere (otherwise edl.py warns on reuse)
-  sync=SONG_TIME   for lipsync clips: the song time where the clip's own audio starts; the in-point
-                   is then computed so the mouth stays on the song (find it with sync_offset.py)
+  cuts=True        the shot runs across a cut in its source on purpose (otherwise edl.py warns)
+  sync=SONG_TIME   for lipsync shots: the song time where the source's own audio starts (0 for an
+                   existing music video cut against its own soundtrack); the in-point is then computed
+                   so the mouth stays on the song (find it with sync_offset.py). The source's own
+                   picture/audio offset ("av_offset" in mv/data/mouths.json, measured with
+                   lip_check.py) is applied on top
   matte=True       person matte for an archive shot (rembg on the segment), so fx.py can put graphics
                    behind the people in it; AI clips with a <CODE>_matte.mp4 get one automatically
 OVER track (double exposures over the main track):
   (start_beat, beats, src, in_seconds, dict(op=0.4, blend="screen"|"add"|"lighten"|"diff", fade=0.4, ...))
 
-After writing edl.json it prints an edit report and warnings: footage reused, grade changes between
-consecutive archive shots that aren't at a story turn, the average shot length against PACE_BEATS,
-sources per song section, shot sizes (when tagged), and singer shots whose mouth may move off the
-lyrics (from mv/data/mouths.json, see references/video-providers.md "Lipsync"). Warnings are advice:
-fix them or know why each one stands.
+After writing edl.json it prints an edit report and warnings: footage reused (any source, counted per
+file, so two crops of one film count together), shots that run across a cut in their source (including
+the frames a shot keeps showing while the next one dissolves in), grade changes between consecutive
+archive shots that aren't at a story turn, the average shot length against PACE_BEATS, sources per song
+section, shot sizes (when tagged), and singer shots whose mouth may move off the lyrics (from
+mv/data/mouths.json, see references/video-providers.md "Lipsync"). Warnings are advice: fix them or know
+why each one stands.
 """
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from media import duration, is_ai, is_gen  # noqa: E402
+from media import duration, is_ai, is_gen, is_image, src_path  # noqa: E402
 from timing import BEAT, DROPS, DUR, END, SECTIONS as SONG_SECTIONS, beat, beat_at, on_frame  # noqa: E402,F401
 
 ROOT = Path("mv")
@@ -88,6 +94,57 @@ def section(start_beat, shots):
 # ===============================================================================================
 
 
+def load_mouths():
+    f = ROOT / "data" / "mouths.json"
+    return json.loads(f.read_text()) if f.exists() else {}
+
+
+def mouth_entry(src, mouths):
+    """A source's entry in mouths.json: its file-name entry (lip_check.py saves av_offset there, so every
+    code that crops one file shares it) merged with its code entry (sync, safe ranges)."""
+    if src == "BLACK" or is_gen(src):
+        return {}
+    return {**mouths.get(src_path(src).name, {}), **mouths.get(src, {})}
+
+
+def av_offset(src, mouths=None):
+    """How far a source's picture runs ahead of its own audio, in seconds. Lip-synced shots show the frame
+    from that much earlier so the mouth lands on the vocal. Fresh lipsync renders have none; downloads
+    and re-encodes of existing videos often do. Measure it with lip_check.py."""
+    return float(mouth_entry(src, load_mouths() if mouths is None else mouths).get("av_offset", 0.0))
+
+
+def visible_span(segs, i):
+    """Source seconds a main-track shot shows, including the frames it keeps playing while the next
+    shot dissolves in."""
+    s = segs[i]
+    nxt = segs[i + 1] if i + 1 < len(segs) else None
+    tail = nxt["xd"] if nxt and nxt.get("x") == "dissolve" else 0.0
+    return s["in"], s["in"] + (s["dur"] + tail) * s.get("speed", 1.0)
+
+
+def source_cuts(src, a, b, cache):
+    """Hard cuts in a video source between a and b seconds (colour-histogram jumps), cached by span."""
+    key = f"{src_path(src)}|{a:.2f}|{b:.2f}"
+    if key not in cache:
+        import cv2
+        cap = cv2.VideoCapture(str(src_path(src)))
+        fps = cap.get(cv2.CAP_PROP_FPS) or 24.0
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(round(a * fps)))
+        prev, found = None, []
+        for k in range(int((b - a) * fps) + 1):
+            ok, frame = cap.read()
+            if not ok:
+                break
+            hsv = cv2.cvtColor(cv2.resize(frame, (96, 54)), cv2.COLOR_BGR2HSV)
+            h = cv2.normalize(cv2.calcHist([hsv], [0, 1], None, [16, 8], [0, 180, 0, 256]), None).flatten()
+            if prev is not None and cv2.compareHist(prev, h, cv2.HISTCMP_BHATTACHARYYA) > 0.35:
+                found.append(round(a + k / fps, 2))
+            prev = h
+        cache[key] = found
+    return cache[key]
+
+
 def default_grade(src, start=0.0):
     if src in DEFAULT_GRADES:
         return DEFAULT_GRADES[src]
@@ -130,12 +187,13 @@ def main():
         if abs(sb + total - nxt[0]) > 1e-6:
             sys.exit(f"section at beat {sb} sums to {total} beats, but the next section starts at beat {nxt[0]}")
     main_segs = []
+    mouths = load_mouths()
     for start_beat, shots in SECTIONS:
         b = start_beat
         for src, t_in, beats, o in shots:
             start = on_frame(beat(b)) if b else 0.0  # the cut lands on the frame at or before its beat
-            if "sync" in o:  # lipsync: play the clip so its audio lines up with the song
-                t_in = start - o["sync"]
+            if "sync" in o:  # lipsync: play the source so its mouth lines up with the song
+                t_in = start - o["sync"] - av_offset(src, mouths)
             s = seg_dict(src, t_in, beats * BEAT, o, start)
             s["start"] = start
             main_segs.append(s)
@@ -170,16 +228,31 @@ def report(segs, grades):
     span = lambda s: (s["in"], s["in"] + s["dur"] * s.get("speed", 1.0))
     shown = [s for s in segs if on_frame(s["start"]) < on_frame(END - 0.01) and s["src"] != "BLACK"]
 
+    video = lambda s: s["src"] != "BLACK" and not is_gen(s["src"]) and not is_image(s["src"])
     used = {}
     for s in shown:
-        if not lib(s):
+        if not video(s):
             continue
         a, b = span(s)
-        prev = next((t for (a2, b2, t) in used.get(s["src"], []) if min(b, b2) - max(a, a2) > 0.5), None)
+        f = str(src_path(s["src"]).resolve())
+        prev = next((t for (a2, b2, t) in used.get(f, []) if min(b, b2) - max(a, a2) > 0.25), None)
         if prev is not None and not s.get("motif"):
             add("footage reused (set motif=True on deliberate repeats)",
                 f"{s['start']:7.2f}s {s['src']} {a:.1f}-{b:.1f}s, already shown at {prev:.2f}s")
-        used.setdefault(s["src"], []).append((a, b, s["start"]))
+        used.setdefault(f, []).append((a, b, s["start"]))
+
+    cfile = ROOT / "data" / "cuts_cache.json"
+    cache = json.loads(cfile.read_text()) if cfile.exists() else {}
+    shown_ids = {id(x) for x in shown}
+    for i, s in enumerate(segs):
+        if id(s) not in shown_ids or not video(s) or s.get("cuts"):
+            continue
+        a, b = visible_span(segs, i)
+        inner = [c for c in source_cuts(s["src"], a, b, cache) if a + 0.06 < c < b - 0.06]
+        if inner:
+            add("shots that run across a cut in their source (move the in-point or the length, or set cuts=True)",
+                f"{s['start']:7.2f}s {s['src']} shows {a:.2f}-{b:.2f}s, source cut at {', '.join(f'{c:.2f}' for c in inner)}s")
+    cfile.write_text(json.dumps(cache))
 
     look = lambda g: (grades[g][1] if grades[g][0] > 0.05 else -1, grades[g][2] < 0.05)
     turn = lambda t: sum(on_frame(t) >= on_frame(x - 0.01) for x, _ in STORY_GRADES)
@@ -211,19 +284,19 @@ def report(segs, grades):
         if x.get("size") and x.get("size") == y.get("size"):
             add("neighbouring shots of the same size", f"{y['start']:7.2f}s {x['src']} -> {y['src']} both {y['size']}")
 
-    mfile = ROOT / "data" / "mouths.json"
-    mouths = json.loads(mfile.read_text()) if mfile.exists() else {}
+    mouths = load_mouths()
     for s in shown:
-        m = mouths.get(s["src"])
-        if not m:
+        m = mouth_entry(s["src"], mouths) if video(s) else {}
+        if not (m.get("sync") is not None or m.get("safe")):
             continue
         a, b = span(s)
         native = m.get("sync")
-        if native is not None and s.get("speed", 1.0) == 1.0 and abs(s["start"] - s["in"] - native) <= 0.05:
+        off = float(m.get("av_offset", 0.0))
+        if native is not None and s.get("speed", 1.0) == 1.0 and abs(s["start"] - s["in"] - native - off) <= 0.05:
             continue   # a singing take shown where it was recorded
         if any(a >= x - 0.05 and b <= y + 0.05 for x, y in m.get("safe", [])):
             continue   # mouth closed or out of view in this stretch
-        why = (f"recorded for song time {native + a:.2f}s" if native is not None
+        why = (f"recorded for song time {native + off + a:.2f}s" if native is not None
                else "outside its mouth-safe ranges")
         add("singer shots whose mouth may move off the lyrics (mouths.json)",
             f"{s['start']:7.2f}s {s['src']} clip {a:.1f}-{b:.1f}s, {why}")

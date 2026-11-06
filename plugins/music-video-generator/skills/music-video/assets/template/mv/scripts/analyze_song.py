@@ -8,7 +8,7 @@ writes a "beats" list that follows the drift; timing.py then uses it instead of 
 The draft is a starting point: check the grid with a beat sheet, rename the sections after listening
 and reading the lyrics, and adjust drops, countdowns and letterbox stretches by hand.
 With --lyrics it also transcribes into mv/data/lyrics.json with mlx-whisper (Apple Silicon) or, failing
-that, openai-whisper (pip install openai-whisper).
+that, openai-whisper (pip install openai-whisper), in overlapping 30 s windows (see transcribe_chunked).
 """
 import argparse
 import json
@@ -114,6 +114,63 @@ def sections(beats, dur, S, f):
     return out
 
 
+CHUNK, OVERLAP = 30.0, 8.0   # lyrics: Whisper windows and their overlap, in seconds
+
+
+def transcribe_chunked(song, language):
+    """Whisper in overlapping 30 s windows. On a whole song it can skip a verse outright (it once dropped
+    the first verse of a 1984 single that a 30 s window transcribed fine), and short windows give tighter
+    word timings. Each window keeps only the words in its own middle stretch (windows split the same
+    lines differently, so keeping whole lines duplicates them), and a line cut by a window edge is
+    joined back together."""
+    y16, _ = librosa.load(song, sr=16000, mono=True)
+    opts = dict(word_timestamps=True, language=language, condition_on_previous_text=False)
+    try:
+        import mlx_whisper
+        from models import whisper_dir  # plain anonymous download, pinned checksum
+        run = lambda a: mlx_whisper.transcribe(a, path_or_hf_repo=str(whisper_dir()), **opts)
+    except ImportError:
+        try:
+            import whisper
+        except ImportError:
+            raise SystemExit("to transcribe lyrics: pip install mlx-whisper (Apple Silicon) or openai-whisper")
+        model = whisper.load_model("turbo")
+        run = lambda a: model.transcribe(a, **opts)
+    dur = len(y16) / 16000
+    starts = np.arange(0.0, max(dur - OVERLAP, 1e-3), CHUNK - OVERLAP)
+    pieces = []
+    for k, a in enumerate(starts):
+        b = min(a + CHUNK, dur)
+        lo = 0.0 if k == 0 else a + OVERLAP / 2          # each window owns its middle stretch
+        hi = dur if k == len(starts) - 1 else b - OVERLAP / 2
+        for s in run(y16[int(a * 16000):int(b * 16000)].astype(np.float32))["segments"]:
+            ws = [dict(w=w["word"].strip(), start=a + w["start"], end=a + w["end"]) for w in s.get("words", [])]
+            if ws:   # keep the words this window owns: windows segment the same lines differently
+                ws = [w for w in ws if w["w"] and lo <= (w["start"] + w["end"]) / 2 < hi]
+                if not ws:
+                    continue
+                st, en, text = ws[0]["start"], ws[-1]["end"], " ".join(w["w"] for w in ws)
+            else:
+                st, en, text = a + s["start"], a + s["end"], s["text"].strip()
+                if not text or not lo <= (st + en) / 2 < hi:
+                    continue
+            junk = (s.get("no_speech_prob", 0) > 0.6 or s.get("compression_ratio", 0) > 2.4
+                    or text.lower().strip(".! ") in ("thank you", "thanks for watching", "you"))
+            pieces.append(dict(k=k, start=st, end=en, text=text, suspect=bool(junk), words=ws))
+    pieces.sort(key=lambda p: p["start"])
+    joined = []
+    for p in pieces:   # a line cut by a window edge comes back as two pieces from neighbouring windows
+        q = joined[-1] if joined else None
+        if q and q["k"] != p["k"] and p["start"] - q["end"] < 0.5:
+            q.update(k=p["k"], end=p["end"], text=q["text"] + " " + p["text"], words=q["words"] + p["words"],
+                     suspect=q["suspect"] and p["suspect"])
+        else:
+            joined.append(p)
+    r2 = lambda x: round(x, 2)
+    return [dict(start=r2(p["start"]), end=r2(p["end"]), text=p["text"], suspect=p["suspect"],
+                 words=[dict(w=w["w"], start=r2(w["start"]), end=r2(w["end"])) for w in p["words"]]) for p in joined]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("song")
@@ -194,25 +251,7 @@ def main():
         print("wrote", out)
 
     if args.lyrics:
-        opts = dict(word_timestamps=True, language=args.language, condition_on_previous_text=False)
-        try:
-            import mlx_whisper
-            from models import whisper_dir  # plain anonymous download, pinned checksum
-            r = mlx_whisper.transcribe(args.song, path_or_hf_repo=str(whisper_dir()), **opts)
-        except ImportError:
-            try:
-                import whisper
-            except ImportError:
-                raise SystemExit("to transcribe lyrics: pip install mlx-whisper (Apple Silicon) or openai-whisper")
-            r = whisper.load_model("turbo").transcribe(args.song, **opts)
-        keep = []
-        for s in r["segments"]:
-            text = s["text"].strip()
-            junk = (s.get("no_speech_prob", 0) > 0.6 or s.get("compression_ratio", 0) > 2.4
-                    or text.lower().strip(".! ") in ("thank you", "thanks for watching", "you"))
-            keep.append(dict(start=round(s["start"], 2), end=round(s["end"], 2), text=text, suspect=bool(junk),
-                             words=[dict(w=w["word"].strip(), start=round(w["start"], 2), end=round(w["end"], 2))
-                                    for w in s.get("words", [])]))
+        keep = transcribe_chunked(args.song, args.language)
         Path("mv/data/lyrics.json").write_text(json.dumps(keep, indent=1))
         for s in keep:
             print(f"{s['start']:7.2f}-{s['end']:7.2f} {'?' if s['suspect'] else ' '} {s['text']}")

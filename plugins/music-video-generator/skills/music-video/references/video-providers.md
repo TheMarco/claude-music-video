@@ -97,6 +97,16 @@ audio starts and record it in `mv/data/mouths.json`, then place it with `S("L1",
 time>)`; the EDL computes the in-point. Windows that disagree in the sync report mean drift there:
 start that cut later or nudge `sync` per cut.
 
+A source's mouth can also sit off its own audio. Fresh takes are usually tight, but footage that has been
+downloaded, re-encoded or edited (the user's performance video, an existing music video cut against its
+own soundtrack with `sync=0`) often carries an offset of a third of a second or more, and `sync` alone
+then places every shot exactly as wrong as the file. `lip_check.py CODE T1 T2 T3` writes frame-by-frame
+mouth strips labelled with the song time and the word sung there; `lip_check.py CODE --save SECONDS`
+stores the offset as `"av_offset"` under the file's name in `mv/data/mouths.json`, and `edl.py` applies it
+to every `sync` shot of that file, on top of `sync`:
+`{"missingyou.mp4": {"av_offset": 0.36}, "L1": {"sync": 62.48, "safe": [[8.5, 10.0]]}}`. SKILL.md
+Phase 6, "Lip sync", has the method.
+
 **A singing take is shown only at the song time it was recorded for.** Repeated lines are rarely
 phrased the same: a chorus take reused on a later chorus or a drop line looks wrong on screen even when
 the words repeat. Any other shot of the singer needs the mouth closed or out of view (from behind, a

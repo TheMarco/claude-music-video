@@ -47,6 +47,7 @@ Every request uses the same pipeline; the request type decides which phases matt
 | Photo or album-art video | stills in `codes.json` | Slow zoom and pan per shot; grades; overlays between photos |
 | Vertical or square cut, teaser | an existing edit | `render.py --size 1080x1920` (matted shots reframe on the person); `--start/--end` for a 15-30 s hook (see Phase 6) |
 | The user's own footage | local files in `codes.json` | Same as archive; check framing with contact sheets |
+| Remake of an existing music video | the original video plus new footage | The original's soundtrack is the song (keep its audio stream unchanged in the final file); the singer appears only at his own song times (`sync=0`) after measuring the file's picture/audio offset with `lip_check.py` (Phase 6, "Lip sync"); anything the user excludes (a person, a logo) checked on every shot's full visible span (Phase 4) |
 | Changes to an existing project | whatever it has | Read the project's notes first; see "Updating a project's engine" if its scripts are older than the template |
 
 ## Working rules
@@ -176,6 +177,10 @@ Treat it as a draft:
   concept.
 - Whisper invents lines in instrumental parts; `lyrics.json` marks likely ones with `suspect`. Ask the
   user for the real lyrics if anything matters on screen.
+- Whisper can also miss lines. The analyzer transcribes in overlapping 30 s windows, which is more
+  reliable than one pass over the whole song (a single pass once dropped a 1984 single's first verse
+  and put verse 1 three seconds late); if a stretch where someone audibly sings still has no lines,
+  `lip_check.py` prints word timings for the 8 s around any song time.
 
 Then `.venv/bin/python mv/scripts/audio_feats.py` writes the per-frame spectrum, loudness, kick,
 snare, hi-hat and waveform data the overlays can react to.
@@ -201,6 +206,7 @@ resolutions, audio, price), getting local reference photos to the provider, down
   frontal close-ups. Name the angle and the move in every prompt.
 - **Lipsync:** one take per sung line, shown only at the song time it was recorded for; every other
   shot of the singer keeps the mouth closed or out of view (`references/video-providers.md`, "Lipsync").
+  Any source with a singing mouth, AI or not, gets the lip-sync check in Phase 6 before delivery.
 - **Prompts:** describe the motion, camera move, light and atmosphere; turn generated audio off; no
   lipsync unless asked; frame people knees-up or closer so faces hold; for masked characters say the
   face is never shown. Write the concept's look into the prompts (light, color, era) so the clips are
@@ -218,7 +224,13 @@ rights, downloading, scanning films for usable shots and contact sheets. In shor
 items, `ia_fetch.py` to download, list them in `mv/data/codes.json` as short codes (A1, A2 for one
 theme, B1 for another), `scan_archive.py` to find night-light and flash moments, `contact.py` to look at
 labeled thumbnails and pick in-points. Black bars are cropped automatically; override odd framing in
-`mv/data/crops.json`.
+`mv/data/crops.json`. Several codes can point at one file with different crops (a 4:3 film cropped high
+for close-ups and centered for wides); `edl.py` counts reuse per file.
+
+Footage where a singer's mouth is on screen (an existing music video, the user's performance footage,
+concert film) is placed with `sync=` like a lipsync take, and its own picture can run ahead of or behind
+its sound: downloads and re-encodes often carry a third of a second or more. Measure it with
+`lip_check.py` and store it as `av_offset` before placing singing shots (Phase 6, "Lip sync").
 
 ## Phase 4: the edit
 
@@ -261,6 +273,13 @@ for the moments the song builds to.
 makes contact sheets of every shot at its midpoint, cropped as rendered, and prints a brightness report.
 Look at all of them: title cards, in-points on the wrong side of a cut, shots too dark to read. Shots
 flagged bright (mean luma above 0.42 or 90th percentile above 0.85) usually want `expo=0.6-0.8`.
+
+A shot shows more of its source than its own length: while the next shot dissolves in, it keeps playing
+for the length of that dissolve (`xd`). `edl.py` warns about shots that run across a cut in their source
+over that full span, and about footage reused anywhere (AI clips included). When the user excludes
+something from a source (a person, a logo, a scene), check the first and last frame of every shot's full
+visible span, dissolve tail included, not only its midpoint: the contact sheet shows midpoints, and
+dissolves in old films carry a ghost of the next shot for a second or more.
 
 ## Phase 5: concept, look and signature overlays
 
@@ -365,6 +384,27 @@ there, and `sheet.py` prints each still's tones (Phase 5, step 9). A three-and-a
 takes a few minutes on a recent Apple Silicon Mac; segments are cached in `mv/work/seg/` (delete a
 clip's segments there after replacing the clip). Fine grain raises the bitrate: expect about 900 MB for
 three and a half minutes at CRF 19 with heavy grain.
+
+**Lip sync.** Before delivering anything that shows a singing mouth, check it against the vocal; a frame
+comparison only proves the render reproduces its source, not that the source was in sync. A remake of a
+1984 video went out with the singer 0.36 s ahead of his voice in every shot because the downloaded
+original carried that offset and nothing compared mouth to vocal.
+
+```bash
+.venv/bin/python mv/scripts/lip_check.py CODE 25.6 133 200     # mouth strips at three song times
+.venv/bin/python mv/scripts/lip_check.py CODE --save 0.36      # store the offset, then rerun edl.py
+```
+Pick song times where the singer is in a lit, frontal close-up on screen. Each strip labels every frame
+with the song time it plays at and the word sung there; words starting with m, b or p are in capitals,
+and the lips close at their start. Offset = word start minus the song time where the lips close
+(positive: the picture runs ahead). Save it, rerun `edl.py`, rerun the strips: the lips should now close
+on those words at all three points. A constant offset belongs to the file (`av_offset`, applied to every
+`sync` shot of it); one that grows along the song is drift and needs `sync` per stretch. Automatic
+mouth-to-vocal correlation was unreliable on soft, stylized footage; read the strips.
+
+When the song is a video's own soundtrack, keep that audio unchanged in the final file: the render
+encodes the song as AAC, so put the original stream back with
+`ffmpeg -i OUT.mp4 -i ORIGINAL.mp4 -map 0:v:0 -map 1:a:0 -c copy -movflags +faststart FINAL.mp4`.
 
 **Hooks for Reels, TikTok and Shorts.** These platforms replay a video in a loop, so a hook should
 start on a downbeat and run whole bars: `--start` and `--end` move to the nearest bar line (`--exact`
