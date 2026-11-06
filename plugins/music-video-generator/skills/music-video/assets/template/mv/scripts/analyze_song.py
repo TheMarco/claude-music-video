@@ -197,7 +197,8 @@ def main():
         opts = dict(word_timestamps=True, language=args.language, condition_on_previous_text=False)
         try:
             import mlx_whisper
-            r = mlx_whisper.transcribe(args.song, path_or_hf_repo="mlx-community/whisper-large-v3-turbo", **opts)
+            from models import whisper_dir  # anonymous download; mlx-whisper's own would send a saved HF token
+            r = mlx_whisper.transcribe(args.song, path_or_hf_repo=str(whisper_dir()), **opts)
         except ImportError:
             try:
                 import whisper

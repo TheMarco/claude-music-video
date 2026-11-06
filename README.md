@@ -57,7 +57,11 @@ Network access:
   (`ia_search.py`, `ia_fetch.py`)
 - your video-generation MCP, only through its own tools: prompts, and the reference photos you choose
   to send it; finished clips are downloaded from the URLs it returns (`fetch_clip.py`)
-- Python packages from PyPI during setup, and the Whisper and background-removal models on first use
+- Python packages from PyPI during setup
+- the lyrics and background-removal models on first use, downloaded anonymously and checked against
+  pinned checksums (`models.py`): Whisper large-v3-turbo from huggingface.co into
+  `~/.cache/music-video/models/`, and rembg's person model from github.com into rembg's own model
+  folder. Off Apple Silicon, openai-whisper fetches its model from OpenAI's public download server.
 
 Project files stay in the project folder; the history of accepted videos stays in
 `~/.claude/music-video/`. Nothing is sent anywhere else.

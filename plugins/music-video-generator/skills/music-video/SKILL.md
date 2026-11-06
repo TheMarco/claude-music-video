@@ -140,7 +140,9 @@ python3 -m venv .venv
 .venv/bin/python -c "import moderngl; print(moderngl.create_standalone_context().info['GL_RENDERER'])"
 ```
 On Windows the venv's Python is `.venv\Scripts\python`. Lyrics transcription uses mlx-whisper on Apple
-Silicon (installed by the requirements); elsewhere `pip install openai-whisper`. Fonts are picked per
+Silicon (installed by the requirements); elsewhere `pip install openai-whisper`. `models.py` downloads
+the Whisper and person-matte models anonymously on first use; don't switch to the libraries' own
+downloaders, which send saved Hugging Face or `~/.netrc` logins. Fonts are picked per
 video in `fx.py`; `F` and `FS` in `overlay.py` point at the macOS system font folders, and on other
 systems any `.ttf` or `.otf` path works (`references/compositor.md`, "Fonts"). Run every script from
 the project root.
