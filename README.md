@@ -36,6 +36,11 @@ claude plugin install music-video-generator@music-video
 
 Or copy `plugins/music-video-generator/skills/music-video/` to `~/.claude/skills/music-video/`.
 
+The plugin itself holds only Markdown, JSON and its icon. The pipeline's Python scripts are in this
+repository's `engine/` folder; on first use the skill downloads that folder from GitHub, pinned to one
+commit (`ENGINE_REV` in `SKILL.md`), into `~/.claude/music-video/engine/<commit>/`, and copies the
+scripts into each project from there.
+
 ## Use
 
 Start Claude Code in an empty folder with your song in it and ask for a music video ("make a music video
@@ -51,6 +56,8 @@ accepted videos lives in `~/.claude/music-video/`.
 
 Everything runs on your machine: Python scripts copied into each project, ffmpeg, and a GPU compositor.
 Every request the scripts make is anonymous. Network access:
+- github.com: the pipeline scripts, this repository's `engine/` folder at the commit pinned in
+  `SKILL.md`, downloaded once per engine version with `curl` from codeload.github.com
 - archive.org: searching and downloading public-domain and openly licensed films, anonymously
   (`ia_search.py`, `ia_fetch.py`)
 - your video-generation MCP, only through its own tools: prompts, and the reference photos you choose
@@ -73,3 +80,9 @@ anything you plan to release commercially.
 ## Author
 
 Made by Marco van Hylckama Vlieg: [ai-created.com](https://ai-created.com/), [@AIandDesign](https://x.com/AIandDesign) on X.
+
+## Development
+
+The engine lives in `engine/`. After changing it, commit, then set `ENGINE_REV` in
+`plugins/music-video-generator/skills/music-video/SKILL.md` to that commit and raise `version` in
+`plugin.json`, so installs download the new engine.

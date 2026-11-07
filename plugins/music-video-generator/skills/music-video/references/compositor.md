@@ -193,7 +193,7 @@ inside the bar spans from `look.py`.
   uniform (`bloom`, `glint`, `grain`, `vignette`, `ca`, `punch`, `flash`, `invert`, `scan`, `letterbox`,
   `fade`, `shockT`/`shockAmp`) overrides it for that frame.
 
-`assets/examples/fx_examples.py` shows the mechanics with four small effects (light leak on downbeats,
+`$ENGINE/examples/fx_examples.py` (the engine folder, SKILL.md "The engine") shows the mechanics with four small effects (light leak on downbeats,
 a one-beat aberration accent on drops, a rim glow on the person on kicks, embers lit by hi-hats).
 Render stills at 3-6 telling times and look at the sheet before a full render.
 

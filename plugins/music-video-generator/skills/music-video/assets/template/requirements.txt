@@ -1,9 +1,0 @@
-numpy
-scipy
-librosa
-soundfile
-moderngl
-pillow
-opencv-python<5
-rembg[cpu]
-mlx-whisper; sys_platform == "darwin" and platform_machine == "arm64"

@@ -6,7 +6,7 @@ What this file protects is each video's identity: the lines "type", "graphics" a
 for a different song does not reuse those unless the user asks. The "brief", "look" and "edit" lines are
 for reference only: deep blacks, film grain, glow on the kick and fast cutting are craft, and they recur
 whenever a brief and a song call for them. A new version of the same song keeps its brief's look; change
-only what the user objected to. `scripts/concept_dice.py` reads the identity lines of the last three
+only what the user objected to. `$ENGINE/scripts/concept_dice.py` reads the identity lines of the last three
 entries.
 
 ### Rejected directions

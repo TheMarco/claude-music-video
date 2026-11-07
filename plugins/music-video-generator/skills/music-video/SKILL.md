@@ -18,8 +18,26 @@ loads. Set it in the shell before the first command (`SKILL="<base directory>"`)
 and `refs/` (frame sheets of accepted videos). If `~/.claude/music-video/local.md` exists, read it before
 Phase 0: it holds this user's own tools and standing preferences, and it wins over defaults here.
 
-The bundled template (`$SKILL/assets/template/mv/scripts/`) is a working pipeline. Copy it into each new
-project. Three files belong to the video and get written for it: `edl.py` (the cut), `look.py`
+**The engine.** The pipeline scripts are not part of the plugin. They live in the `engine/` folder of
+the skill's public repository, github.com/TheMarco/claude-music-video, and are downloaded once per
+engine version, pinned to one commit, into `~/.claude/music-video/engine/<commit>/`. `$ENGINE` below
+means that folder. Set both variables, and download the engine if it isn't there yet, before the first
+command:
+
+```bash
+SKILL="<base directory>"
+ENGINE_REV=fce571cc119f34c252bb5c6b38edcf89933edf78
+ENGINE="$HOME/.claude/music-video/engine/$ENGINE_REV"
+if [ ! -f "$ENGINE/template/mv/scripts/render.py" ]; then
+  rm -rf "$ENGINE" && mkdir -p "$ENGINE" &&
+  curl -fsSL "https://codeload.github.com/TheMarco/claude-music-video/tar.gz/$ENGINE_REV" |
+    tar -xz -C "$ENGINE" --strip-components=2 "claude-music-video-$ENGINE_REV/engine"
+fi
+```
+
+Tell the user once, before the first download, that the skill fetches its scripts from that repository
+at that commit. The template in it (`$ENGINE/template/mv/scripts/`) is a working pipeline. Copy it into
+each new project. Three files belong to the video and get written for it: `edl.py` (the cut), `look.py`
 (palettes, grades, the finish) and `fx.py` (its overlays and shaders). The rest is the engine.
 
 ```
@@ -138,10 +156,10 @@ Needs Python 3.10-3.13, ffmpeg on the PATH, and a GPU with OpenGL 3.3 (any Mac f
 a Linux or Windows machine with current drivers).
 
 ```bash
-mkdir -p mv && cp -R "$SKILL/assets/template/mv/scripts" mv/
+mkdir -p mv && cp -R "$ENGINE/template/mv/scripts" mv/
 mkdir -p mv/data mv/clips mv/archive mv/review mv/work mv/out
 python3 -m venv .venv
-.venv/bin/pip install -q -r "$SKILL/assets/template/requirements.txt"
+.venv/bin/pip install -q -r "$ENGINE/template/requirements.txt"
 .venv/bin/python -c "import moderngl; print(moderngl.create_standalone_context().info['GL_RENDERER'])"
 ```
 On Windows the venv's Python is `.venv\Scripts\python`. Lyrics transcription uses mlx-whisper on Apple
@@ -322,7 +340,7 @@ lines returns unless the user asks.
    missing): the identity lines of recent videos and any rejected directions. For a new version of the
    same song, keep the brief's look and the edit's energy; replace what the user objected to.
 3. **Collect motifs and sparks.** 5-10 concrete motifs from the title, lyrics, theme and footage; method
-   and sparks in `references/effects-ideas.md`. For more, `python3 "$SKILL/scripts/concept_dice.py"`
+   and sparks in `references/effects-ideas.md`. For more, `python3 "$ENGINE/scripts/concept_dice.py"`
    draws random overlay ideas; use the ones that serve the brief and drop the rest.
 4. **Write three concepts**, three different identities inside the same brief. For each: one or two
    sentences on what a viewer sees and feels at the drop (light, color, what fills the frame, what
@@ -355,7 +373,7 @@ lines returns unless the user asks.
    (`draw_front`, `draw_behind`), shaders (`GLSL_COMP` with the person matte, `GLSL_FINAL`) for matte
    tricks, light and accents, and per-frame uniforms from the audio and song position (they can also
    drive any engine value). The engine draws nothing by itself and stays untouched.
-   `$SKILL/assets/examples/fx_examples.py` shows the mechanics; it is not a kit.
+   `$ENGINE/examples/fx_examples.py` shows the mechanics; it is not a kit.
 9. **Judge the stills before the full render**, at the drops, the loudest chorus, the breakdown and the
    intro. Don't approve your own stills because the idea is clever.
    - Read them against the brief's words: would the user recognize their brief in these frames?
