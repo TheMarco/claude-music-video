@@ -1,9 +1,11 @@
-numpy
-scipy
-librosa
-soundfile
-moderngl
-pillow
+# Upper bounds stop a new major release from breaking a pinned engine. Tested with numpy 2.5, scipy 1.18,
+# librosa 1.0, soundfile 0.14, moderngl 5.13, pillow 13.0, opencv-python 4.14, rembg 2.0, mlx-whisper 0.4.
+numpy<3
+scipy<2
+librosa<2
+soundfile<1
+moderngl<6
+pillow>=10.1,<14
 opencv-python<5
-rembg[cpu]
-mlx-whisper; sys_platform == "darwin" and platform_machine == "arm64"
+rembg[cpu]<3
+mlx-whisper<1; sys_platform == "darwin" and platform_machine == "arm64"

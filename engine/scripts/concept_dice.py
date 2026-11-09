@@ -1,26 +1,24 @@
 #!/usr/bin/env python3
 """Random sparks for a video's signature overlays, to get past this skill's usual graphics.
 
-Usage: python3 "$SKILL/scripts/concept_dice.py" [--n 3] [--seed N]   ($SKILL = this skill's folder)
+Usage: python3 "$ENGINE/scripts/concept_dice.py" [--n 3] [--seed N]   ($ENGINE = the engine folder, SKILL.md)
 
 Optional. The brief and the song decide the base look (mood, palette, finish, edit pace), and the
 footage stays graded footage, full frame. The dice only suggest what goes on top of it: an overlay
 element, an accent for the drops (a beat or two at most), a color move in the grade, how type behaves,
 how cuts are marked, what the music drives, plus a wildcard rule. Use what serves the brief and the
 song, drop the rest. Entries whose key (the words before the colon) appear in the identity lines of the
-last three entries in ~/.claude/music-video/history.md are skipped (the file is created from
-assets/history_template.md if missing), and the draws don't share entries.
+last three entries in ~/.claude/music-video/history.md are skipped (nothing is skipped while that file
+doesn't exist; SKILL.md creates it from the skill's history template), and the draws don't share entries.
 No dependencies; any Python 3 works.
 """
 import argparse
 import random
 import re
-import shutil
 from pathlib import Path
 
 HOME = Path.home() / ".claude" / "music-video"
 HISTORY = HOME / "history.md"
-TEMPLATE = Path(__file__).resolve().parent.parent / "assets" / "history_template.md"
 
 DECKS = {
     "overlay": [  # the signature element drawn over the footage; it covers part of the frame
@@ -123,9 +121,6 @@ def main():
     ap.add_argument("--n", type=int, default=3)
     ap.add_argument("--seed", type=int)
     args = ap.parse_args()
-    if not HISTORY.exists() and TEMPLATE.exists():
-        HOME.mkdir(parents=True, exist_ok=True)
-        shutil.copy(TEMPLATE, HISTORY)
     rng = random.Random(args.seed)
     seen = recent_text()
     print("Last videos (their signature, graphics, type and title are not reused for a different song):")

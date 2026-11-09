@@ -83,6 +83,17 @@ Made by Marco van Hylckama Vlieg: [ai-created.com](https://ai-created.com/), [@A
 
 ## Development
 
-The engine lives in `engine/`. After changing it, commit, then set `ENGINE_REV` in
-`plugins/music-video-generator/skills/music-video/SKILL.md` to that commit and raise `version` in
-`plugin.json`, so installs download the new engine.
+The engine lives in `engine/`. After changing it, run the smoke test with a Python that has
+`engine/template/requirements.txt` installed (a project's `.venv/bin/python` works):
+
+```
+path/to/.venv/bin/python engine/scripts/smoke_test.py
+```
+
+It pushes a synthetic song and test-pattern clips through analysis, the grid check, the edit, stills,
+a full render, a vertical hook and QC, and stops at the first step that fails. Then commit, set
+`ENGINE_REV` in `plugins/music-video-generator/skills/music-video/SKILL.md` to that commit and raise
+`version` in `plugin.json`, so installs download the new engine.
+
+`evals/evals.json` holds test prompts for the skill itself, with what a good run does for each. Run
+them after changing `SKILL.md` or the references.

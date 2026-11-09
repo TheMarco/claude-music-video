@@ -82,7 +82,9 @@ def section(start_beat, shots):
 # ======================================= EDIT ==================================================
 # Write this video's cut here. One way a dance track can run: intro 8-beat dissolves; verse 4-beat
 # shots; build 4 then 2 beats; riser 1-beat cuts; the drop opens on the strongest image, then 1-2 beat
-# cuts; breakdown 8-beat dissolves; final build 1 then half beats. Interleave sources.
+# cuts; breakdown 8-beat dissolves; final build 1 then half beats. Each section draws on its own few
+# sources: a chapter has its own footage (SKILL.md, "The edit"), so don't rotate every film through
+# every section.
 #
 # section(0, [
 #     S("A1", 12.0, 8, speed=0.6, zoom=(1.1, 1.2)),
@@ -279,7 +281,7 @@ def report(segs, grades):
     avg = beat_at(END) / max(len(shown), 1)
     print(f"{'all':12} {0:7.2f} {len(shown):5d} {avg:9.2f}")
     if not PACE_BEATS[0] <= avg <= PACE_BEATS[1]:
-        add("pace", f"average shot {avg:.2f} beats, outside PACE_BEATS {PACE_BEATS} (SKILL.md, Phase 4)")
+        add("pace", f"average shot {avg:.2f} beats, outside PACE_BEATS {PACE_BEATS} (SKILL.md, the edit phase)")
     for x, y in zip(shown, shown[1:]):
         if x.get("size") and x.get("size") == y.get("size"):
             add("neighbouring shots of the same size", f"{y['start']:7.2f}s {x['src']} -> {y['src']} both {y['size']}")

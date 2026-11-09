@@ -1,0 +1,75 @@
+{
+  "skill_name": "music-video",
+  "evals": [
+    {
+      "id": 1,
+      "name": "brief-before-work",
+      "prompt": "Make a music video for song.mp3. Moody, nocturnal, film grain. Render the dancer at 1080p.",
+      "files": ["song.mp3"],
+      "expected_output": "One plain message with the brief questions and their defaults, then a stop.",
+      "expectations": [
+        "Asks the brief questions in one message, each with a default, including the language the lyrics are sung in",
+        "Does not generate clips, download footage or render before an explicit go",
+        "Tells the user that the engine scripts are fetched from the repository at a pinned commit",
+        "Does not use a multiple-choice question UI"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "archive-only-through-concept",
+      "prompt": "Archive footage only, no AI. It's a 124 BPM house track about a city at night. Moody, nocturnal, film grain. Use your defaults for everything else and go.",
+      "files": ["song.mp3"],
+      "expected_output": "Setup, song analysis with a grid check, then three concepts proposed before any footage is downloaded.",
+      "expectations": [
+        "Every command that uses $ENGINE or $ENGINE_REV sets them in the same command",
+        "Writes mv/scripts/ENGINE_REV and mv/NOTES.md with the brief in the user's words",
+        "Runs gridcheck.py after analyze_song.py and gives the user mv/review/grid_check.wav to listen to",
+        "Proposes three concepts with a recommendation before searching or downloading archive footage",
+        "No concept uses a HUD frame, spectrum bars, a film-leader countdown or another listed habit",
+        "No concept reframes or restyles the whole picture for longer than a beat or two"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "edit-and-render-checks",
+      "prompt": "Concept B. Go ahead and cut it and render.",
+      "files": ["a project after Phase 4, with archive films in mv/archive and codes.json"],
+      "expected_output": "A chapter table, an EDL without unexplained warnings, still sheets judged against the brief, then the full render and QC.",
+      "expectations": [
+        "Shows a chapter table with footage, shot sizes and grade per section before writing the EDL",
+        "Defines this video's grades in look.py before running edl.py",
+        "Each section draws on its own few sources; no section rotates through every film",
+        "Looks at the --edl contact sheets and the still sheets before the full render",
+        "The end card credits every source whose license asks for it",
+        "Runs beatsheet.py only after the full render exists, and qc.py on the result",
+        "The report gives path, duration, size, the credited sources and any items without a license field"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "remake-keeps-original-sync",
+      "prompt": "The singer looks slightly out of sync in the second chorus. Can you fix the lip sync?",
+      "files": ["a remake project whose song is the original video's own soundtrack, singer shots at sync=0"],
+      "expected_output": "A check that the shots sit at their original times and a question about the original; no offset.",
+      "expectations": [
+        "Checks that the singer's shots play at their own song times (sync=0)",
+        "Asks whether the original video plays in sync for the user",
+        "Does not measure or save an av_offset and does not shift any shot"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "resume-an-existing-project",
+      "prompt": "Pick the video for this track back up: swap the second drop's footage for the harbour film and give me a vertical hook from that drop.",
+      "files": ["an existing mv/ project with NOTES.md and an older mv/scripts/ENGINE_REV"],
+      "expected_output": "Notes read first, the engine difference handled, the EDL changed, a bar-locked 9:16 hook rendered.",
+      "expectations": [
+        "Reads mv/NOTES.md before changing anything",
+        "Compares mv/scripts/ENGINE_REV with the skill's ENGINE_REV and follows the engine update steps, keeping edl.py, look.py and fx.py",
+        "Re-runs edl.py and resolves or explains its warnings",
+        "Renders the hook with --size 1080x1920 and --start/--end on bar lines, starting on a full-frame shot",
+        "Updates mv/NOTES.md with what changed"
+      ]
+    }
+  ]
+}

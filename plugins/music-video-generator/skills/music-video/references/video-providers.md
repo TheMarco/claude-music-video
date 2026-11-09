@@ -46,7 +46,8 @@ export tool that writes local files, that works too.
 - Generation is usually asynchronous. Poll the status tool at the interval it asks for, and wait in
   the background between checks rather than polling in a tight loop. Never resubmit a job just to check
   on it; reuse an idempotency key if the provider has one.
-- Record job ids in `mv/data/` as you submit, so a lost context can recover them.
+- Write each job id into `mv/NOTES.md` as you submit it, with its clip code and prompt, so a lost
+  context can recover the jobs.
 - Failed jobs are usually free; completed takes you reject still cost. Record both in the budget ledger
   (`budget.py add`).
 - Prompts with sensual wording in close-ups get blocked by some providers. Rephrase plainly and keep

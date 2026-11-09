@@ -1,11 +1,11 @@
 """This video's own effects and graphics. The engine has no style of its own: everything the viewer
-sees beyond the graded footage is designed here, for this song (SKILL.md Phase 5), together with
+sees beyond the graded footage is designed here, for this song (SKILL.md, the concept phase), together with
 look.py (palettes, grades, finish). Starting empty is deliberate. Don't paste in another video's fx.py.
 
 Usually this includes the title and artist moment, the end card with any credits the footage's
 licenses require, and the 3-6 signature overlays from the concept. Some videos need no graphics at all.
 Overlays sit on top of the footage; the shaders don't restyle the whole picture except as a short
-accent on a hit (SKILL.md Phase 5).
+accent on a hit (SKILL.md, the concept phase).
 
 UNIFORMS      {name: default}: extra shader uniforms (float, or a 2/3/4-tuple for vec2/vec3/vec4).
 GLSL_COMP     defines vec3 fxComp(vec3 col, vec2 uv, float matte): runs on the composited picture before
@@ -27,7 +27,7 @@ draw_front(ov, d, t, f, ctx)    draws over everything with the PIL ImageDraw d.
               label, local time and duration.
 
 Prototype each effect on a still sheet before a full render. references/effects-ideas.md has the
-method; assets/examples/fx_examples.py shows the mechanics.
+method; examples/fx_examples.py in the engine folder ($ENGINE in SKILL.md) shows the mechanics.
 """
 from overlay import F, FS, hash01, keyframes  # noqa: F401  (font folders and helpers)
 

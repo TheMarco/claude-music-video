@@ -18,7 +18,7 @@ music video. New overlays, same structure.
 3. Pick 3-6 that together tell the song's arc: something that builds, something that pays off at the
    drop or last chorus, something that changes on a specific lyric. One strong overlay carried through
    the whole video beats five busy ones.
-4. Check them against the brief's mood, the craft list and habits in SKILL.md Phase 5, and the
+4. Check them against the brief's mood, the craft list and habits in SKILL.md Phase 3, and the
    history. A restyled HUD, meter, ring or analyzer gets replaced. So does anything that reframes
    or restyles the whole picture for longer than a beat or two.
 5. Build in `fx.py`; prototype each on a still sheet at the moments it matters. Drop what doesn't read

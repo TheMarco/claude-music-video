@@ -12,7 +12,7 @@
 - Shaders and uniforms (fx.py)
 - Audio data
 - Lyrics
-- Fonts on macOS
+- Fonts
 - Pitfalls
 
 The engine (`render.py`, `overlay.py`) draws no graphics of its own: with an empty `fx.py` it renders the
@@ -184,7 +184,7 @@ inside the bar spans from `look.py`.
   before echo/trail feedback and overlays; `matte` is the person matte. Matte tricks (a glow or outline
   around the person, light behind them), short accents on hits and, for visualizers, generated
   backgrounds go here. In a music video the footage stays graded footage: picture-wide stylization runs
-  for a beat or two at most (SKILL.md Phase 5).
+  for a beat or two at most (SKILL.md Phase 3).
 - `GLSL_FINAL` defines `vec3 fxFinal(vec3 col, vec2 uv, vec2 p)`, applied after bloom, flash and invert,
   before vignette and grain. GLSL helpers available: `hash`, `gnoise`, `mrep`, `ASP`, `time`.
 - `uniforms(t, a)` returns values per frame. `a` holds `kick`, `snare`, `hat`, `rms` envelopes, `spec`
@@ -195,7 +195,9 @@ inside the bar spans from `look.py`.
 
 `$ENGINE/examples/fx_examples.py` (the engine folder, SKILL.md "The engine") shows the mechanics with four small effects (light leak on downbeats,
 a one-beat aberration accent on drops, a rim glow on the person on kicks, embers lit by hi-hats).
-Render stills at 3-6 telling times and look at the sheet before a full render.
+Render stills at 3-6 telling times and look at the sheet before a full render. The end card is part of
+`fx.py` too: artist and title as the brief gave them, and a credit for every source whose license asks
+for one.
 
 ## Audio data
 

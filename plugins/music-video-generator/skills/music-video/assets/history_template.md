@@ -1,6 +1,6 @@
 # Videos made with the music-video skill
 
-Newest first. Phase 7 adds an entry when the user accepts a video. Phase 5 reads it.
+Newest first. Phase 7 adds an entry when the user accepts a video. Phase 3 reads it.
 
 What this file protects is each video's identity: the lines "type", "graphics" and "signature". A video
 for a different song does not reuse those unless the user asks. The "brief", "look" and "edit" lines are
