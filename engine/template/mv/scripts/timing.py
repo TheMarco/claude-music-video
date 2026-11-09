@@ -21,10 +21,10 @@ T0 = float(_CFG.get("t0", 0.0))
 DUR = float(_CFG["duration"])
 NFRAMES = int(math.ceil(DUR * FPS))
 END = float(_CFG.get("end") or DUR + 1.0)          # end card starts here; past DUR means no end card
-DROPS = [float(x) for x in _CFG.get("drops", [])]  # white flash + shockwave
+DROPS = [float(x) for x in _CFG.get("drops", [])]  # drop times; nothing happens at them unless look.py or fx.py asks
 SHOCKS = [(float(a), float(b)) for a, b in _CFG.get("shocks", [[d, 0.09] for d in DROPS])]
 LETTERBOX = [(float(a), float(b)) for a, b in _CFG.get("letterbox", [])]
-COUNTDOWNS = [float(x) for x in _CFG.get("countdowns", [])]  # 8-beat film-leader countdown start times
+COUNTDOWNS = [float(x) for x in _CFG.get("countdowns", [])]  # 8 beats before each drop, for whatever the concept builds there
 
 # (start, end, name, kick, calm) in seconds; kick 0..1 scales beat pulses, calm marks quiet sections
 SECTIONS = [(float(s["start"]), float(s["end"]), s["name"], float(s.get("kick", 0.3)), bool(s.get("calm", False)))

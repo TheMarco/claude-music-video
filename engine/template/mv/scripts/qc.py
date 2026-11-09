@@ -16,7 +16,10 @@ args = ap.parse_args()
 raw = subprocess.run(["ffmpeg", "-v", "error", "-i", args.video, "-vf", "scale=64:36,format=gray",
                       "-f", "rawvideo", "-"], capture_output=True).stdout
 d = np.frombuffer(raw, np.uint8).reshape(-1, 36 * 64).astype(float)
-fps = 24.0
+rate = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+                       "-of", "csv=p=0", args.video], capture_output=True, text=True).stdout.strip().strip(",")
+num, _, den = rate.partition("/")
+fps = float(num) / float(den or 1) if num else 24.0
 m = d.mean(1)
 diff = np.r_[0, np.abs(np.diff(d, axis=0)).mean(1)]
 ok = lambda i: args.ignore_before < i / fps < args.ignore_after

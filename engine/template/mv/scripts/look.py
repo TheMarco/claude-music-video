@@ -1,6 +1,6 @@
 """This video's look: palettes, grades and the finish applied to every frame. render.py reads it.
 
-Every value here is a decision for this video (SKILL.md Phase 5), made from the user's brief first.
+Every value here is a decision for this video (SKILL.md, the concept phase), made from the user's brief first.
 The finish is craft, not identity: grain, glow, contrast and a beat punch are what give a music video
 its weight, and they recur whenever the mood calls for them. Pick the STARTS entry that matches the
 brief's mood, then tune. "none" is for concepts whose whole finish is built in fx.py; with a pale grade
