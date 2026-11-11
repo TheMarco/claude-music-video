@@ -67,6 +67,8 @@ Every request the scripts make is anonymous. Network access:
   pinned checksums (`models.py`): Whisper large-v3-turbo from huggingface.co into
   `~/.cache/music-video/models/`, and rembg's person model from github.com into rembg's own model
   folder. Off Apple Silicon, openai-whisper fetches its model from OpenAI's public download server.
+- optionally, for lip-sync and word-timed type: Demucs (vocal separation), installed from PyPI when
+  you agree to it; it pulls in PyTorch and downloads its own model on first run
 
 Project files stay in the project folder; the history of accepted videos stays in
 `~/.claude/music-video/`. Nothing is sent anywhere else.
