@@ -1,6 +1,7 @@
 """Analyze the song: tempo, beat grid, sections, drops, end point, and (optionally) lyrics.
 
-Usage: .venv/bin/python mv/scripts/analyze_song.py SONG.mp3 [--title T] [--artist A] [--lyrics] [--language en] [--force]
+Usage: .venv/bin/python mv/scripts/analyze_song.py SONG.mp3 [--title T] [--artist A] [--lyrics] [--language en]
+                                                             [--vocals STEM.wav] [--bpm B] [--force]
 
 Writes a draft mv/data/song.json (unless it exists; --force overwrites) and prints a section table.
 If the tempo drifts (common in AI-generated songs, which can wander by several BPM), it also
@@ -9,6 +10,10 @@ The draft is a starting point: check the grid with a beat sheet, rename the sect
 and reading the lyrics, and adjust drops, countdowns and letterbox stretches by hand.
 With --lyrics it also transcribes into mv/data/lyrics.json with mlx-whisper (Apple Silicon) or, failing
 that, openai-whisper (pip install openai-whisper), in overlapping 30 s windows (see transcribe_chunked).
+--vocals transcribes a separated vocal stem instead of the mix: word times on the mix can be a third of
+a second off, on a clean stem they have been within 0.03 s, which lip-sync slices and word-timed type
+need. --bpm is a tempo you already know; a result under 90 BPM is doubled when the half beats carry
+onsets too (the usual half-tempo misreading), and --bpm overrides that.
 """
 import argparse
 import json
@@ -48,18 +53,33 @@ def best_grid(e, t_env, periods, start, length):
     return best
 
 
-def find_grid(e, t_env, dur):
-    ac = librosa.autocorrelate(e - e.mean(), max_size=int(1.2 * SR / HOP))
-    lags = np.arange(len(ac)) * HOP / SR
-    ok = (lags > 60 / 180) & (lags < 60 / 70)
-    cand = lags[ok][np.argmax(ac[ok])]
+def find_grid(e, t_env, dur, hint=None):
+    """Tempo and first beat. hint (--bpm) limits the search to within 4% of a tempo the user knows."""
+    note = None
+    if hint:
+        cand = 60 / hint
+    else:
+        ac = librosa.autocorrelate(e - e.mean(), max_size=int(1.2 * SR / HOP))
+        lags = np.arange(len(ac)) * HOP / SR
+        ok = (lags > 60 / 180) & (lags < 60 / 70)
+        cand = lags[ok][np.argmax(ac[ok])]
     # autocorrelation lags are about 1% apart at this tempo, so search a few percent around them
     _, period, phase = best_grid(e, t_env, np.linspace(cand * 0.96, cand * 1.04, 801), 0.0, dur)
+    if not hint and 60 / period < 90:
+        # A slow result is often half the real tempo: a pop kick on 1 and 3 autocorrelates at two beats
+        # (a 144.5 BPM song came out as 72.3). When the half beats carry clear onsets too, take the
+        # double: on a doubled grid every real beat is still a grid line, on a halved one half are missing.
+        k = np.arange(int((dur - phase) / period))
+        half = float(np.interp(phase + (k + 0.5) * period, t_env, e).mean()) / (float(e.mean()) + 1e-9)
+        if half >= 1.5:
+            note = (f"tempo doubled from {60 / period:.2f} BPM: onsets on the half beats are {half:.1f}x the song's "
+                    f"average. If the song really is that slow, run again with --bpm {60 / period:.1f}")
+            _, period, phase = best_grid(e, t_env, np.linspace(period / 2 * 0.99, period / 2 * 1.01, 201), 0.0, dur)
     bpm = 60 / period
     if abs(bpm - round(bpm)) < 0.08:  # most produced tracks sit on a whole BPM
         bpm = float(round(bpm))
         _, period, phase = best_grid(e, t_env, [60 / bpm], 0.0, dur)
-    return bpm, phase % period
+    return bpm, phase % period, note
 
 
 def local_tempo(e, t_env, bpm, dur, win=24.0, step=6.0):
@@ -179,12 +199,14 @@ def main():
     ap.add_argument("--lyrics", action="store_true")
     ap.add_argument("--language", default="en", help="Whisper language code; use the song's language")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--bpm", type=float, default=None, help="a tempo you know; the search stays within 4% of it")
+    ap.add_argument("--vocals", default=None, help="a separated vocal stem to transcribe instead of the mix")
     args = ap.parse_args()
 
     y, _ = librosa.load(args.song, sr=SR, mono=True)
     dur = len(y) / SR
     env, e, t_env, S, f = onset_env(y)
-    bpm, t0 = find_grid(e, t_env, dur)
+    bpm, t0, tempo_note = find_grid(e, t_env, dur, args.bpm)
     curve = local_tempo(e, t_env, bpm, dur)
     trend = wobble = 0.0
     if len(curve) >= 3:
@@ -230,6 +252,8 @@ def main():
         cfg["beats"] = [round(float(b), 4) for b in beats]
 
     print(f"BPM {bpm:.2f}  beat {60 / bpm:.4f}s  t0 {t0:.4f}s  duration {dur:.2f}s  end {end:.2f}s")
+    if tempo_note:
+        print("NOTE", tempo_note)
     if len(curve):
         print(f"local tempo {curve[:, 1].min():.2f}-{curve[:, 1].max():.2f} BPM, trend {trend:+.2f}, wobble {wobble:.2f}"
               + (f"  -> DRIFTS: beat map with {len(beats)} beats" if use_map else "  -> steady grid"))
@@ -251,7 +275,7 @@ def main():
         print("wrote", out)
 
     if args.lyrics:
-        keep = transcribe_chunked(args.song, args.language)
+        keep = transcribe_chunked(args.vocals or args.song, args.language)
         Path("mv/data/lyrics.json").write_text(json.dumps(keep, indent=1))
         for s in keep:
             print(f"{s['start']:7.2f}-{s['end']:7.2f} {'?' if s['suspect'] else ' '} {s['text']}")

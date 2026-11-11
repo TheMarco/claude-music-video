@@ -6,6 +6,11 @@ for each 2 s window of the clip. Windows that disagree mean the mouth drifts the
 or nudge sync for that cut. --near is the song time of the slice you sent to the generator; songs repeat
 bars, so searching within 15 s of it avoids locking onto an identical bar elsewhere.
 Needs a clip generated with audio (e.g. Seedance with the song slice as reference and audio on).
+A take made from a lipsync_slice.py slice needs neither option: its entry in mv/data/slices.json gives
+the song time to search near and the audio the slice was cut from. When that was the separated vocal,
+the take is matched against the vocal, which is the like-for-like comparison (--song STEM does the same
+by hand). A similarity under 0.4 means the take's sound is not the song there (the generator re-sang or
+garbled the line): nothing is saved, and the take needs a retake.
 --save records the start as this take's "sync" in mv/data/mouths.json (keyed by the clip's file name),
 where edl.py and vocal_match.py read it: a singing take is shown only at the song time it was recorded for.
 """
@@ -28,7 +33,11 @@ ap.add_argument("--song", default=None)
 ap.add_argument("--window", type=float, default=2.0)
 ap.add_argument("--save", action="store_true", help="record the start in mv/data/mouths.json")
 args = ap.parse_args()
-song = args.song or json.loads(Path("mv/data/song.json").read_text())["song"]
+sfile = Path("mv/data/slices.json")
+made = (json.loads(sfile.read_text()) if sfile.exists() else {}).get(Path(args.clip).stem, {})
+if args.near is None and "start" in made:
+    args.near = made["start"]
+song = args.song or made.get("audio") or json.loads(Path("mv/data/song.json").read_text())["song"]
 wav = subprocess.run(["ffmpeg", "-v", "error", "-i", args.clip, "-vn", "-ac", "1", "-ar", str(SR), "-f", "f32le", "-"],
                      capture_output=True).stdout
 c = np.frombuffer(wav, np.float32)
@@ -62,11 +71,17 @@ def locate(seg):
 
 
 start, conf = locate(FC)
-print(f"clip audio starts at song time {start:.3f}s (similarity {conf:.2f}; above 0.6 is solid)")
+print(f"clip audio starts at song time {start:.3f}s (similarity {conf:.2f}; above 0.6 is solid), matched against {song}")
+if "start" in made:
+    print(f"  its slice started at {made['start']:.3f}s: the take sits {start - made['start']:+.2f}s from it")
 n = int(args.window * SR / HOP)
 for k in range(0, FC.shape[1] - n + 1, n):
     t, cf = locate(FC[:, k:k + n])
     print(f"  clip {k * HOP / SR:5.1f}s -> song {t:8.3f}s  implies start {t - k * HOP / SR:8.3f}s  similarity {cf:.2f}")
+if conf < 0.4:
+    print("LOW SIMILARITY: this take's sound is not the song here. Listen to the clip; if the line is re-sung or "
+          "garbled, make the take again. Nothing saved.")
+    sys.exit(1)
 if args.save:
     mfile = Path("mv/data/mouths.json")
     mouths = json.loads(mfile.read_text()) if mfile.exists() else {}

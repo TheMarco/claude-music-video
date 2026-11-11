@@ -7,7 +7,7 @@ works). Needs ffmpeg and a GPU with OpenGL 3.3. Run it before pointing ENGINE_RE
 engine commit.
 
 It builds a throwaway project (a 24 s song at 120 BPM with a quiet intro, two test-pattern clips), then
-runs analyze_song, gridcheck, audio_feats, edl (an edit generated on the grid, with a dissolve and a
+runs conform --check, analyze_song, gridcheck, audio_feats, edl (an edit generated on the grid, with a dissolve and a
 double exposure), contact --edl, render --stills (once with the empty fx.py, once with
 examples/fx_examples.py), sheet, a full render, beatsheet, qc, a vertical bar-locked part, and
 concept_dice. It checks that every step exits cleanly and writes what it should, that the analyzer
@@ -93,11 +93,12 @@ def main():
     for name, src in (("a", "testsrc2"), ("b", "smptebars")):
         run("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"{src}=s=640x360:r=24:d=14",
             "-pix_fmt", "yuv420p", f"footage/{name}.mp4")
+    print(run(py, "mv/scripts/conform.py", "footage/a.mp4", "footage/b.mp4", "--check"))   # clean clips: exit 0
     (root / "mv/data/codes.json").write_text(json.dumps({"A1": "footage/a.mp4", "B1": "footage/b.mp4"}))
 
     run(py, "mv/scripts/analyze_song.py", "song.wav", "--title", "Smoke", "--artist", "Test", "--force")
     cfg = json.loads((root / "mv/data/song.json").read_text())
-    if not any(abs(cfg["bpm"] * m - BPM) < 1.0 for m in (0.5, 1, 2)):
+    if abs(cfg["bpm"] - BPM) > 1.0:
         sys.exit(f"FAILED: analyzer found {cfg['bpm']} BPM for a {BPM:g} BPM song")
     print(run(py, "mv/scripts/gridcheck.py"))
     need("mv/review/grid_check.wav")
