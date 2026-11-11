@@ -2,7 +2,8 @@
 
 AI clips come from whatever video-generation MCP server the user has connected: Hedra, a Runway, Luma,
 Kling, Replicate or fal server, or anything else that renders video. The skill works only
-through the tools the connected MCP exposes. If no video MCP is connected, the video is archive-only.
+through the tools the connected MCP exposes. If no video MCP is connected, the video is archive-only,
+unless the user asks for a provider's web app to be used instead ("Providers without an MCP" below).
 
 ## Find out what the provider can do
 
@@ -85,17 +86,36 @@ export tool that writes local files, that works too.
 Only when the user asks for it. Two routes exist on most providers:
 
 - **A video model that takes reference audio.** Pass the singer's photos as references and a black video
-  carrying the exact slice of the song as reference video, with generated audio on and a prompt that
-  says to use that audio. Make the slice with
-  `ffmpeg -f lavfi -i color=black:s=854x480:r=24 -ss START -t DUR -i song.mp3 -shortest -c:v libx264 -c:a aac slice.mp4`
-  and get it to the provider like any other local file.
+  carrying the exact slice of the song's vocal as reference video, with generated audio on and a prompt
+  that says to use that audio. Make the slice with
+  `.venv/bin/python mv/scripts/lipsync_slice.py CODE FIRST_WORD_TIME SECONDS --audio <vocal stem>`
+  and get `mv/work/slices/CODE.mp4` to the provider like any other local file.
 - **Avatar or talking-photo models:** a portrait plus an audio file, often minutes long and cheap per
   second. Good for whole verses on one setup; less camera movement.
 
-Mouths follow the clip's own audio, which is not always exactly where you asked. For each lipsync clip
+**The slice decides the take.** What worked, on 21 takes of one video:
+
+- The separated vocal alone (SKILL.md Phase 2), not the mix: the model copies a clean vocal exactly
+  (similarity 0.9 and up against the stem) and has nothing else to mouth.
+- `FIRST_WORD_TIME` is a line start from `mv/data/lyrics.json`, transcribed from that vocal. The slice
+  then starts in the gap 0.3-0.6 s before the word. A slice that opens inside the previous line makes
+  the take start on a cut word and pushes its own last words out of the take.
+- Nothing muted. Silencing other voices or the neighbouring lines inside the slice cost the takes
+  their line endings; choose slice edges that fall in gaps instead.
+- Whole lines only: `lipsync_slice.py` warns when the slice ends before a line does and says which
+  length would hold it. Two lines per take (6-8 s) is a good unit; the edit can punch in on the second.
+- Spoken lines by another voice (a second character, a caller) sit in the stem too. Leave them out
+  of a take by where the slice starts and ends, and put that speaker on screen some other way.
+
+Mouths follow the clip's own audio, which is not always exactly where you asked. First
+`.venv/bin/python mv/scripts/conform.py mv/clips/L1.mp4` (a misstated frame rate shifts every mouth),
+then for each lipsync clip
 run `.venv/bin/python mv/scripts/sync_offset.py mv/clips/L1.mp4 --save` to find the song time where its
 audio starts and record it in `mv/data/mouths.json`, then place it with `S("L1", 0, beats, sync=<that
-time>)`; the EDL computes the in-point. Windows that disagree in the sync report mean drift there:
+time>)`; the EDL computes the in-point. A take from a `lipsync_slice.py` slice is matched against the
+audio its slice was cut from, near the slice's time; expect it within about 0.1 s of the slice start.
+Under 0.4 similarity the script saves nothing: listen to the take, and make it again if the line is
+re-sung or garbled. Windows that disagree in the sync report mean drift there:
 start that cut later or nudge `sync` per cut.
 
 A source's mouth can also sit off its own audio: footage that has been downloaded, re-encoded or edited
@@ -152,3 +172,37 @@ for current models and prices. It bills a workspace credit pool (`get_balance`, 
 - Outputs: `get_generations` returns presigned URLs of about 1,700 characters; download them with
   `fetch_clip.py` and `@file`. Up to 4 jobs per status call; a 10-15 s Seedance clip takes about 3-8
   minutes; keep at most 20 jobs in flight.
+
+## Providers without an MCP
+
+Some users generate in a provider's web app (Dreamina, a studio page) on their own account. Use one
+only when the user asks for it, and work the way they choose:
+
+- **Hand-off folders.** One folder per take in `mv/handoff/NN_CODE/` with everything that take needs,
+  named in upload order (`Image1_face.png`, `Image2_outfit.png`, `Image3_place.png`,
+  `Video1_slice.mp4`), `prompt.txt` and `settings.txt` (model, resolution, aspect, seconds, audio on or
+  off), plus an `INDEX.md` listing every take. The user uploads and submits; downloads go through
+  `conform.py` and, for singing takes, `sync_offset.py --save`.
+- **Driving the user's browser**, only with their explicit permission for that site, in the tab they
+  open. Submit one test take, let the user judge it, then the batch. Keep a per-take log of what was
+  submitted, so a failed or refunded job is retried once and never double-submitted.
+
+## Example: Dreamina (web app)
+
+Notes from one video in November 2026 (Seedance 2.5, 720p, 43 clips); check the app for current
+models and prices.
+
+- Cost: 29 credits/s with image references only, 58 credits/s with a reference video (so every
+  lip-sync take costs double). Failed generations were refunded.
+- References are objects in the prompt box, not text: typing "@Image1" does nothing. Each uploaded
+  file has to be picked from the mention list so it becomes a reference tag, and the prompt then
+  refers to the tags ("the woman in @Image1 wearing the outfit in @Image2 in the place in @Image3,
+  singing the audio of @Video1").
+- Downloads state 60 fps and hold 24 fps frames with uneven gaps: run `conform.py` on every file.
+  Files fetched from the Assets page carry no "AI" badge.
+- Batch download from Assets (select several, Download) arrives as one zip after a delay that can
+  run to 20 minutes; a single clip downloads as a plain mp4. Match files to takes by kind and length.
+- A take that failed four times with one place reference passed at once with another. Change the
+  references or the prompt after the second failure.
+- Seedance 2.5 started each take on the slice's true first word even when the slice was cut badly,
+  so sync held; what a bad slice loses is the end of the line.

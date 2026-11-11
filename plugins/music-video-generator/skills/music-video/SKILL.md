@@ -30,7 +30,7 @@ means that folder:
 
 ```bash
 SKILL="<base directory>"
-ENGINE_REV=691f52588134b4fff8d1905463db0804a91bfb84
+ENGINE_REV=ff65b9cc1c5e1af83ffb93343e506ce155699d08
 ENGINE="$HOME/.claude/music-video/engine/$ENGINE_REV"
 if [ ! -f "$ENGINE/template/mv/scripts/render.py" ]; then
   TMP="$ENGINE.part" && rm -rf "$TMP" "$ENGINE" && mkdir -p "$TMP" &&
@@ -105,7 +105,15 @@ These matter more than any technique below.
 - **Each video gets its own identity.** Videos that share overlays (a HUD frame, a spectrum analyzer,
   the same title and word styles) look like one family even when each adds something new. New
   signature overlays, type and title for every song (Phase 3).
-- **Text is sparse.** Running subtitles belong in lyric videos, when asked.
+- **Text is sparse**, unless the brief or its reference videos say otherwise. Running subtitles belong
+  in lyric videos, when asked.
+- **Reference videos are a specification.** When the user names videos as inspiration, study them
+  before writing a concept and write down what they do: how much of the running time carries type, how
+  many kinds of graphics, how fast it cuts, what happens on the hook. Match that density with a look
+  of your own. A first version with a fraction of the references' overlays gets sent back.
+- **A video uses only its own footage.** Never fill a gap with clips, stills or renders from another
+  project, even one with the same performer, unless the user asks. An ending that needs more picture
+  reprises this video's own shots.
 - **Grain, when a look uses it, has to read as film, not digital noise.** The engine's grain does this
   (clumped, per dye layer, midtone weighted).
 - **Never "fix" original footage with someone singing.** When the song is an existing video's own
@@ -220,6 +228,10 @@ Treat it as a draft:
   concept.
 - Whisper invents lines in instrumental parts; `lyrics.json` marks likely ones with `suspect`. Ask the
   user for the real lyrics if anything matters on screen.
+- A result under 90 BPM is doubled when the half beats carry onsets too, and the analyzer says so in
+  a NOTE line: a pop kick on 1 and 3 reads as half the tempo (a 144.5 BPM song came out as 72.3). That
+  is a prior, not a measurement. If the song really is slow, run again with `--bpm`; if a fast song
+  still comes out halved, `--bpm` with the doubled value. The click track below settles it.
 - Whisper can also miss lines. The analyzer transcribes in overlapping 30 s windows, which is more
   reliable than one pass over the whole song (a single pass once dropped a 1984 single's first verse
   and put verse 1 three seconds late); if a stretch where someone audibly sings still has no lines,
@@ -231,6 +243,23 @@ off, the tempo half or double, or a section drifting; and it writes `mv/review/g
 song with a click on every beat and a higher one on every bar line. Follow up each hint (correct `bpm`,
 `t0` or the sections in `song.json` and run it again), then give the user the file along with the
 section list to confirm by ear: a wrong grid spoils every cut after it.
+
+**Word times for lip sync and word-timed type come from the separated vocal.** On the full mix
+Whisper's word times can be a third of a second off; on a clean vocal stem they have been within
+0.03 s. When the video has lip-sync takes, words that land on the sung word, or karaoke lines, separate
+the vocal first and transcribe that:
+```bash
+.venv/bin/pip install -q demucs && .venv/bin/demucs -n htdemucs_ft --two-stems vocals -o mv/stems song.mp3
+.venv/bin/python mv/scripts/analyze_song.py song.mp3 --lyrics --vocals mv/stems/htdemucs_ft/song/vocals.wav
+.venv/bin/python mv/scripts/align_lyrics.py lyrics.txt     # the user's lyric, one sung line per row
+```
+Demucs is optional, installs PyTorch and downloads its own model on first run; tell the user before
+installing it. `align_lyrics.py` keeps Whisper's times and puts the real words on them (spoken lines
+and ad-libs included, written as they are heard); lines it marks with `~` have estimated word times
+and want a listen. Take every line start from this file. Never read line starts off the stem's
+loudness: a dip can sit a whole phrase away from the line (a spoken "play it again" before a verse was
+taken for the verse's first word, and every slice cut from those times opened inside the previous
+line and lost the end of its own).
 
 Then `.venv/bin/python mv/scripts/audio_feats.py` writes the per-frame spectrum, loudness, kick,
 snare, hi-hat and waveform data the overlays can react to.
@@ -329,6 +358,9 @@ resolutions, audio, price), getting local reference photos to the provider, down
   angle and the move in every prompt.
 - **Lipsync:** one take per sung line, shown only at the song time it was recorded for; every other
   shot of the singer keeps the mouth closed or out of view (`references/video-providers.md`, "Lipsync").
+  Cut each take's reference audio with `lipsync_slice.py` from a line start in `lyrics.json` and fix
+  every warning it prints before spending credits; one test take first, the user judges the sync, then
+  the batch.
   Any source with a singing mouth, AI or not, gets the lip-sync check in Phase 6 before delivery.
 - **Prompts:** describe the motion, camera move, light and atmosphere; turn generated audio off; no
   lipsync unless asked; frame people knees-up or closer so faces hold; for masked characters say the
@@ -337,6 +369,18 @@ resolutions, audio, price), getting local reference photos to the provider, down
 - Save clips as `mv/clips/<CODE>.mp4` with short codes (P1-P6 for one performer, Q1-Q6 for another):
   `python3 -I mv/scripts/fetch_clip.py mv/clips/P1.mp4 URL`. Then make mattes: `.venv/bin/python mv/scripts/make_matte.py mv/clips/*.mp4` (skip files already
   ending in `_matte`).
+- **Check every clip's frame rate as it arrives**, before mattes, sync measurement and the edit:
+  `.venv/bin/python mv/scripts/conform.py mv/clips/*.mp4`. Some generators write 24 fps takes on a
+  60 fps clock with uneven gaps between frames; read as stated, those clips get frames duplicated or
+  dropped and the video stutters. `conform.py` leaves clean clips alone and rewrites the others with
+  every frame once. Never change a clip's rate with a plain `-r` or an `fps` filter.
+- **Check every clip against its references before the edit.** Contact-sheet the batch
+  (`contact.py`) next to the outfit and set stills and look at each clip for: the right outfit, every
+  piece of it (top, shoes, accessories); the face in frame when the take sings; the framing the prompt
+  asked for; nobody in shot who shouldn't be. Retake what fails now. A wrong top that reaches the
+  user in a finished cut costs a render and a round of review.
+- When a job keeps failing with the same inputs, change the inputs, not the number of tries: another
+  place or outfit reference, a reworded prompt, a different slice length.
 - Write each job id into `mv/NOTES.md` when you submit it, so a lost context can pick the jobs up.
 - Keep superseded clips in a subfolder rather than deleting them.
 
@@ -450,12 +494,17 @@ the song.
 
 **Lip sync.** When the song is an existing video's own soundtrack and the user sees that video play in
 sync, its timing is final: singing shots at their own song times (`sync=0`), no offset. Don't "correct"
-it from a measurement. Whisper's word timings on sung vocals can be off by a third of a second, enough to
+it from a measurement. Whisper's word timings on a full mix can be off by a third of a second, enough to
 make a source that plays in sync look 0.36 s early on a strip read against them; a remake was shifted by
 exactly that and the user, who saw the original in sync, had to undo it. `lip_check.py` strips help place
 a lipsync take or check the user's own footage, and `av_offset` (`lip_check.py CODE --save SECONDS`) is
 for a source the user sees out of sync when it plays on its own. Ask the user to watch the source before
 setting one.
+
+Generated lip-sync takes are the opposite case: each one is placed by measurement, never by the time
+its slice was cut at. `sync_offset.py CLIP --save` finds where the take's sound sits in the song and
+refuses a take whose sound is not the song (re-sung or garbled lines happen; that take needs a retake).
+In the edit, a take enters on its line's first word and leaves before any word its slice did not carry.
 
 When the song is a video's own soundtrack, keep that audio unchanged in the final file: the render
 encodes the song as AAC, so put the original stream back with
