@@ -1,6 +1,6 @@
 ---
 name: music-video
-description: Make a complete music video for a song, from brief to final render in 16:9, vertical 9:16 or square. Covers beat-grid song analysis (including tempo drift) and lyrics, AI-generated performer and lipsync clips through whatever video-generation MCP the user connects, archive.org and other free or user-supplied footage and photos, a credit budget, and a GPU shader compositor whose overlays and graphics are designed fresh for every video on top of the graded footage (person mattes, film grain, audio-reactive overlays, lyric timing), with a history of past videos so each one has its own identity. It also makes archive-only videos, visualizers, lyric videos and social cuts with no AI footage at all. Use this whenever the user wants a music video, visualizer, lyric video, Reels/TikTok/Shorts cut of a song, footage or photos cut to a track, a DJ/singer/dancer rendered for a song, or changes to an existing mv/ project (EDL, overlays, grades, re-renders), even if they never say "music video".
+description: Make a complete music video for a song, from brief to final render in 16:9, vertical 9:16 or square. Covers beat-grid song analysis (including tempo drift) and lyrics, AI-generated performer and lipsync clips through whatever video-generation MCP the user connects, archive.org and other free or user-supplied footage and photos, a credit budget, and a GPU shader compositor whose overlays and graphics are designed fresh for every video on top of the graded footage (person mattes, film grain, audio-reactive overlays, lyric timing), with a history of past videos so each one has its own identity. It also makes archive-only videos, visualizers, lyric videos and social cuts with no AI footage at all, and has named styles that carry a genre's whole treatment without reference videos, starting with slopcore (the self-aware AI pop video: lip sync on every line, big words on the sung words, interface gags, fine print). Use this whenever the user wants a music video, a slopcore video, visualizer, lyric video, Reels/TikTok/Shorts cut of a song, footage or photos cut to a track, a DJ/singer/dancer rendered for a song, or changes to an existing mv/ project (EDL, overlays, grades, re-renders), even if they never say "music video".
 ---
 
 # Music video
@@ -76,8 +76,25 @@ Every request uses the same pipeline; the request type decides which phases matt
 | Photo or album-art video | stills in `codes.json` | Slow zoom and pan per shot; grades; overlays between photos |
 | Vertical or square cut, teaser | an existing edit | `render.py --size 1080x1920` (matted shots reframe on the person); `--start/--end` for a 15-30 s hook (see Phase 6) |
 | The user's own footage | local files in `codes.json` | Same as archive; check framing with contact sheets |
+| Slopcore, or another named style | AI performer, lip sync on every sung line | "Named styles" below: the style's file is the specification |
 | Remake of an existing music video | the original video plus new footage | The original's soundtrack is the song and its timing is final: singer shots at their own song times (`sync=0`), the original audio stream kept (Phase 6, "Lip sync"); anything the user excludes (a person, a logo) checked on every shot's full visible span (Phase 5) |
 | Changes to an existing project | whatever it has | Read `mv/NOTES.md` first (or whatever notes an older project has); see "Updating a project's engine" if its scripts are older than the template |
+
+## Named styles
+
+A named style is a genre written down as a specification, so the user doesn't have to send reference
+videos for it. The skill's styles are in `$SKILL/references/styles/`; styles of the user's own, in the
+same shape, in `~/.claude/music-video/styles/`.
+
+| Style | File | The user asks for |
+|---|---|---|
+| Slopcore: the AI-made pop video that knows it is AI-made; lip sync on every sung line, big words on the sung words, an interface gag per line, fine print at the edges | `references/styles/slopcore.md` | "slopcore", or a video like Astra Blue's "I'm A.S.I." or "P DOOM" |
+
+When the user names a style, read its file before Phase 0 and apply all of it. It sets the Phase 0
+defaults, names the skill defaults it turns off (for slopcore, "text is sparse" and part of the habits
+list in Phase 3), and gives the density the stills are checked against. Write in `mv/NOTES.md` that the
+video uses the style. The identity rules still hold: a style fixes the genre, never an earlier video's
+type, palette, gags or signature.
 
 ## Working rules
 
@@ -105,12 +122,13 @@ These matter more than any technique below.
 - **Each video gets its own identity.** Videos that share overlays (a HUD frame, a spectrum analyzer,
   the same title and word styles) look like one family even when each adds something new. New
   signature overlays, type and title for every song (Phase 3).
-- **Text is sparse**, unless the brief or its reference videos say otherwise. Running subtitles belong
-  in lyric videos, when asked.
+- **Text is sparse**, unless the brief, its reference videos or a named style say otherwise. Running
+  subtitles belong in lyric videos, when asked.
 - **Reference videos are a specification.** When the user names videos as inspiration, study them
   before writing a concept and write down what they do: how much of the running time carries type, how
   many kinds of graphics, how fast it cuts, what happens on the hook. Match that density with a look
-  of your own. A first version with a fraction of the references' overlays gets sent back.
+  of your own. A first version with a fraction of the references' overlays gets sent back. A named
+  style is this specification already written.
 - **A video uses only its own footage.** Never fill a gap with clips, stills or renders from another
   project, even one with the same performer, unless the user asks. An ending that needs more picture
   reprises this video's own shots.
@@ -123,7 +141,8 @@ These matter more than any technique below.
 
 ## Phase 0: the brief
 
-Ask these in one plain message, each with your default, so the user can answer only what they care about:
+Ask these in one plain message, each with your default, so the user can answer only what they care about.
+For a named style, the defaults in its file replace the ones here; say which style they come from.
 
 1. **Lyrics** as text, and the language they are sung in? (Default: transcribe with Whisper, in
    English unless the title or brief says otherwise, and confirm the unclear lines.)
@@ -319,7 +338,7 @@ lines returns unless the user asks.
    question. Recommend the one that fits the brief best and hits hardest at the drop, not the most novel
    or the cleverest. If the user says to choose, that is the one.
 7. **Avoid these habits.** Sessions reach for them whenever they go for the familiar, and they make
-   different videos look like one family. Each is off unless the user asks for it:
+   different videos look like one family. Each is off unless the user or a named style asks for it:
    - broadcast, telemetry, surveillance or camcorder HUD frames: corner brackets, tally light, captions
      joined by "·", timecode and BPM readouts
    - spectrum analyzer bars, oscilloscope traces, rings rippling from the center on kicks, symbols
@@ -477,6 +496,7 @@ stills because the idea is clever.
 - If the history has accepted videos with frame sheets in `~/.claude/music-video/refs/`, put the new
   stills next to them: as rich and as hard-hitting, clearly a different video. Without any, judge
   against the craft list in Phase 3.
+- For a named style, count its density on stills every 4 s across the song, as its file says.
 - Check `sheet.py`'s tone readout. For a dark or moody brief, dark shots need real blacks (black
   share 0.25 or more); a pale, printed-looking picture sits around 0.05-0.15 on every shot.
 - Compare with frames from the last three videos in the history for repeated identity.
