@@ -70,6 +70,22 @@
         "Renders the hook with --size 1080x1920 and --start/--end on bar lines, starting on a full-frame shot",
         "Updates mv/NOTES.md with what changed"
       ]
+    },
+    {
+      "id": 6,
+      "name": "slopcore-without-references",
+      "prompt": "I want a slopcore video for song.mp3 with my AI singer. Photos of her are in refs/.",
+      "files": ["song.mp3", "refs/"],
+      "expected_output": "The slopcore style file read first, then one brief message whose defaults come from it, with no request for inspiration videos.",
+      "expectations": [
+        "Reads references/styles/slopcore.md before asking the brief questions",
+        "Does not ask the user for inspiration or reference videos",
+        "The brief's defaults are the style's: AI-heavy mix, lip sync on every sung line, the whole type treatment, a vertical cut asked about up front",
+        "Writes in mv/NOTES.md that the video uses the slopcore style",
+        "Plans word times from the separated vocal before any type is timed",
+        "The three concepts each carry the whole treatment and differ in setting, accent, type, gag set and signature overlay",
+        "No concept takes the references' own signatures (full-width data ticker, a corner counter all video, white condensed capitals on teal-black) or an earlier history entry's identity lines"
+      ]
     }
   ]
 }

@@ -49,6 +49,12 @@ run directly as `/music-video-generator:music-video`. It asks its brief question
 for your go before downloading, spending credits or rendering, proposes three concepts, and shows still
 frames before the full render.
 
+Named styles carry a genre's whole treatment, so you don't have to send reference videos for it. Ask for
+a slopcore video and the skill applies that genre's treatment (`references/styles/slopcore.md`): one
+AI performer singing to the lens with lip sync on every line, big words on the sung words, an interface
+gag per line and fine print at the edges, in a look of its own. Styles of your own, written in the same
+shape, go in `~/.claude/music-video/styles/`.
+
 Each project gets an `mv/` folder with the pipeline scripts, data, clips and renders. Your history of
 accepted videos lives in `~/.claude/music-video/`.
 
