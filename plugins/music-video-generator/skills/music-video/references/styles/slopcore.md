@@ -129,8 +129,8 @@ Ask the usual questions; these defaults replace the skill's own:
 - AI settings: lip sync on every sung line (`references/video-providers.md`, "Lipsync"), at least 720p
   since faces fill the frame. Price it early: a take per sung line is most of the budget (Slopcore Encore
   had 43 clips, 21 of them lip-sync takes).
-- Performers: one synthetic performer with a fixed face and hair, a reference sheet made and approved first, one
-  outfit per chapter.
+- Performers: one synthetic performer with a fixed face and hair, a reference sheet made and approved
+  first, one outfit per chapter.
 - Story: the lyric is the story; the line table (below) turns each line into a picture.
 - Text and graphics: the whole treatment.
 - Output: 1920x1080. Ask about a vertical cut up front: the type then has to be laid out for both sizes
