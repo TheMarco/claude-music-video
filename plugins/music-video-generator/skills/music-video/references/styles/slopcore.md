@@ -130,9 +130,12 @@ Not part of every video. Each concept picks three or four that fit its format an
   permission prompt for the edit itself ("Allow Claude to cut to the chorus?"), the context meter
   filling as the song plays and compacting at the bridge, a diff of the lyric as the singer changes a
   word.
-- **Vision labels.** A thin box around a tracked head's padded rect (`ov.heads(t)`) or a prop, with a
-  class name and a score that is the line's joke: LEAD SINGER 0.41, NOT A ROBOT 0.52, EX 0.99. The
-  label sits outside the box, so nothing lands on the face and `facecheck.py` still passes.
+- **Vision labels.** A label on a tracked head (`ov.heads(t)`) or a prop, with a class name and a
+  score that is the line's joke: LEAD SINGER 0.41, NOT A ROBOT 0.52, EX 0.99. On one person, a thin box
+  round the padded head rect with the label outside it. In a group the padded boxes overlap the
+  neighbours' heads and the detector merges faces, so use a chip above each head with a leader line
+  that stops at the padded edge, and let a merged box be part of the joke (BUILDERS x2 0.99). Nothing
+  lands inside a head box, so `facecheck.py` still passes.
 - **A chapter inside an interface.** For one chapter the frame becomes a screen: a livestream with the
   performer in the main window, chat scrolling beside it and reactions arriving on the lyric, cut
   against full-frame shots and never on the drop.

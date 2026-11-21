@@ -61,6 +61,9 @@ reasons, never their effects; the examples below are illustrations, not a list t
   family per video, a new move on the hook.
 - **Graphic shots.** A beat or two of pure graphic cut in like a shot, not laid over one: a full-frame
   counter, a diagram of the line, one symbol. They rest the eye from faces and make the next shot hit.
+  Cut them into the EDL as `BLACK` shots and draw them in `fx.py` by time; when one replaces the start of
+  a shot, start the rest of that shot later in its source by the same amount so the head tracking still
+  matches, and end any type that would run over the graphic on its cut.
 
 Write each effect down as its line or moment, what the viewer sees, the reason in a few words, its
 layer, and its timing (a hit, a hold, or an arc across the video). An effect without a reason goes.
