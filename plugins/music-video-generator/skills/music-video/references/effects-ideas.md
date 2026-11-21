@@ -14,7 +14,8 @@ music video. New overlays, same structure.
 1. List 5-10 concrete motifs from the title, lyrics, theme and footage: objects, places, eras,
    materials, instruments, verbs ("dust in the sky", "a letter never sent", "salt water").
 2. For each, ask what it would look like as something drawn over the footage: a particle, a light, a
-   mark, a word, a line around a person. Write 2-3 candidates per motif.
+   mark, a word, a line around a person. Write 2-3 candidates per motif, held to "What makes an effect
+   land" below.
 3. Pick 3-6 that together tell the song's arc: something that builds, something that pays off at the
    drop or last chorus, something that changes on a specific lyric. One strong overlay carried through
    the whole video beats five busy ones.
@@ -23,6 +24,57 @@ music video. New overlays, same structure.
    or restyles the whole picture for longer than a beat or two.
 5. Build in `fx.py`; prototype each on a still sheet at the moments it matters. Drop what doesn't read
    at full speed, and what hides the footage.
+
+## What makes an effect land
+
+The bar is the strongest slopcore references (`references/styles/slopcore.md`): every effect in them has
+a reason a viewer gets in a second, and none is decoration. Invent to that bar for each video. Take the
+reasons, never their effects; the examples below are illustrations, not a list to pick from.
+
+- **The line, made physical.** Ask of each key line what it does, to whom, and what that would look like
+  if it were real, then draw that. A line about being forgotten: the caption's oldest words fall off the
+  top as new ones arrive, like a full context window. A line about being watched: the world outside the
+  person drops to a coarse screen while they stay sharp. A line about running out of time: the person's
+  matte fills with the accent colour from the feet up across the line.
+- **The world's own medium.** The texture comes from what the story is made of: a newsroom story runs on
+  newsprint, a story inside a phone on compression and screen glare, a courtroom on a sketch artist's
+  pastel, a story at sea on the glitter of the water. It can change when the story turns. Outside a
+  style that allows longer (slopcore's last act), a picture-wide medium stays a beat or two; between
+  those beats it lives in the particles, the punctuation and the type.
+- **Depth from the matte.** Effects placed in space look expensive: a shape that passes behind the
+  person (`draw_behind`) and in front of them (`draw_front`, clear of the face), the world dropping to
+  black for a beat while the person stays lit, the world in one treatment and the person in another,
+  light coming from behind them.
+- **One punctuation of its own.** One mark for the hits, one or two frames, the same every time and
+  invented from the concept: the picture collapsing to the person's silhouette in white on black, the
+  accent colour flooding the shadows, one frame slipped a quarter screen sideways like a film frame off
+  its sprockets. In the references the cuts follow the words (they land on the beat no more often than
+  chance would) and the punctuation follows the drum: their flash frames sit within two frames of the
+  beat.
+- **Attached to the picture.** Graphics that know where things are read as part of the shot: a label on
+  a tracked head (`ov.heads`), a line drawn from the edge of the matte, a mark pinned to a fixed point in
+  a locked shot. Those three are what the engine can follow; don't plan an effect that needs a tracker
+  it doesn't have.
+- **Type that acts out its word.** The entrance has a reason: a word about pressure arrives crushed flat
+  and springs to size, a word about doubt types, deletes and retypes, a word about heat arrives glowing
+  and cools to the type's colour, a price falls digit by digit like an odometer run backwards. One
+  family per video, a new move on the hook.
+- **Graphic shots.** A beat or two of pure graphic cut in like a shot, not laid over one: a full-frame
+  counter, a diagram of the line, one symbol. They rest the eye from faces and make the next shot hit.
+
+Write each effect down as its line or moment, what the viewer sees, the reason in a few words, its
+layer, and its timing (a hit, a hold, or an arc across the video). An effect without a reason goes.
+
+Where each kind goes in the engine (`references/compositor.md`):
+
+- `GLSL_COMP`, `fxComp(col, uv, matte)`: per-pixel changes to the footage, with the person matte, under
+  the type: screens and textures, the world dropping out, the person tinted or filled. Type drawn in
+  `fx.py` stays sharp above it.
+- `GLSL_FINAL` and the engine uniforms returned by `uniforms(t, a)` (`flash`, `invert`, `ca`, `punch`,
+  `fade`): the whole frame, type included. Punctuation frames go here.
+- `draw_behind` and `draw_front`: shapes behind and in front of the person; everything in front goes
+  through `ov.place` against the heads.
+- The EDL's `echo`, `trail` and `glitch` per shot: afterimages, smears and tears.
 
 ## Overlays (draw_front / draw_behind, or additive light in fxFinal)
 
