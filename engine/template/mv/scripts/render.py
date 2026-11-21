@@ -12,10 +12,11 @@ Usage:
 
 Reads mv/data/edl.json (built by mv/scripts/edl.py), mv/data/song.json (via timing.py) and
 mv/data/audio_feats.npz (audio_feats.py). Each EDL segment is cut from its source by ffmpeg into
-mv/work/seg/ (1280x720, 24 fps, speed applied); AI clips with a person matte get a matching matte
-segment. Every output frame is then built on the GPU with moderngl:
+mv/work/seg/ (1280x720, or look.SEG_SIZE for footage made vertical; 24 fps, speed applied); AI clips with
+a person matte or a depth map (make_matte.py, make_depth.py) get matching matte and depth segments. Every output frame is then built on the GPU with moderngl:
   pass 1  layer transforms (zoom/pan/rotate/shake, mirror, kaleidoscope), gradient-map grading,
-          dissolves, double exposure (over track), echo/trail feedback, glitch; matte in alpha
+          dissolves, double exposure (over track), the shot's depth treatment (depth_fx), echo/trail
+          feedback, glitch; matte (and the behind_depth key) in alpha
   pass 2  overlay: "behind" layer (big words) masked by the person matte, then the "front" layer
   bloom   two-level bloom from the bright pass
   final   punch-in, shockwave, chromatic aberration, bloom/halation, star glints, flash, fx.py's
@@ -43,7 +44,7 @@ import moderngl
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-from media import GEN_IDS, crop_for, is_ai, is_gen, is_image, matte_path, src_path  # noqa: E402
+from media import GEN_IDS, crop_for, depth_path, is_ai, is_gen, is_image, matte_path, seg_size, src_path  # noqa: E402
 import fx  # noqa: E402
 from look import FINISH, GRADES, PALETTES, SHADOW_TINT  # noqa: E402
 from overlay import Overlay  # noqa: E402
@@ -52,7 +53,9 @@ from timing import (BEAT, DROPS, DUR, END, FPS, HIT_LEAD, SHOCKS, SONG, bar_line
 
 ROOT = Path("mv")
 SEG = ROOT / "work" / "seg"
-SW, SH = 1280, 720
+SW, SH = seg_size()   # 1280x720 unless look.SEG_SIZE says otherwise (footage made vertical: 1080x1920)
+DEPTH_FX = {"relight": 1, "contours": 2, "scan": 3, "haze": 4}
+DEPTH_AMT = {"relight": 0.85, "contours": 0.9, "scan": 0.8, "haze": 0.45}
 
 VERT = """
 #version 330
@@ -62,7 +65,7 @@ void main(){ uv = pos*0.5+0.5; gl_Position = vec4(pos,0,1); }
 
 COMMON = """
 const float ASP = ASP_VALUE;        // output aspect, filled in at startup
-const float SRC_ASP = 16.0/9.0;     // segments are always 16:9
+const float SRC_ASP = SRC_ASP_VALUE;  // segment aspect (16:9 unless look.SEG_SIZE says otherwise)
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
 vec2 mrep(vec2 p){ return abs(mod(p+1.0, 2.0)-1.0); }
 vec2 hash2(vec2 p){
@@ -82,12 +85,15 @@ float grainAt(vec2 px, float size, float seed){
 
 P1 = """
 #version 330
-uniform sampler2D tA, tB, tC, tPrev, tMA, tMB;
-uniform float hasMA, hasMB;
+uniform sampler2D tA, tB, tC, tPrev, tMA, tMB, tDA, tDB;
+uniform float hasMA, hasMB, hasDA, hasDB;
+uniform float dTreat, dPhase, dAmt, dCount, dBehind;   // the shot's depth treatment and behind_depth key
+uniform vec3 dCol;
 uniform vec4 xfA, xfB, xfC;          // zoom, offx, offy, rot
 uniform vec4 gA1, gA2, gB1, gB2, gC1, gC2;  // (gm,pal,sat,con) (lift,expo,mirror,kal)
 uniform float mixAB, opC, blendC, echo, trail, glitch, time, kalRot, genA, genB, genC, kick, loud;
 in vec2 uv; out vec4 o;
+float DEPTH = 0.0;   // depth at this pixel (0 far .. 1 near) on shots with a depth map; fxComp may read it
 """ + COMMON + """
 vec3 pal(float l, float id){
   vec3 s0,s1,s2,s3,s4;
@@ -152,6 +158,34 @@ vec3 layer(sampler2D t, vec2 p, vec4 xf, vec4 g1, vec4 g2, vec2 gofs, float gen)
   } else c = texture(t, q).rgb;
   return grade(c, g1, g2);
 }
+vec3 depthTreat(vec3 col, vec2 uv){
+  if (dTreat < 0.5 || max(hasDA, hasDB) < 0.5) return col;
+  float d = DEPTH;
+  float lum = dot(col, vec3(.299,.587,.114));
+  if (dTreat < 1.5){            // relight: a plane of light travels from near to far once per cycle
+    float c = 1.08 - dPhase*1.25;
+    float band = exp(-pow((d - c)/0.1, 2.0)) + 0.8*exp(-pow((d - c)/0.012, 2.0));   // glow + crisp edge
+    return col + dAmt*band*dCol*(0.45 + 0.55*lum);
+  }
+  if (dTreat < 2.5){            // contours: iso-depth lines, the nearest first, dCount levels lit so far
+    float lv = 14.0, f = d*lv;
+    float w = max(fwidth(f), 1e-4)*2.4;
+    float line = 1.0 - smoothstep(0.0, w, min(fract(f), 1.0 - fract(f)));
+    float on = step(lv - dCount - 0.5, floor(f + 0.5));
+    return mix(col, dCol, clamp(line*on*dAmt, 0.0, 1.0));
+  }
+  if (dTreat < 3.5){            // scan: a sweep crosses the frame once per cycle and leaves a depth point cloud
+    float sx = dPhase*1.15 - 0.05;
+    vec2 g = uv*vec2(ASP, 1.0)*72.0;
+    float dots = 1.0 - smoothstep(0.1, 0.22, length(fract(g) - 0.5));
+    float after = step(uv.x, sx)*exp(-(sx - uv.x)*2.5);
+    float line = exp(-pow((uv.x - sx)/0.005, 2.0));
+    vec3 tint = dCol*(0.35 + 1.1*d);
+    col = mix(col, col*0.65 + tint*dots, clamp(after*dAmt, 0.0, 1.0));
+    return col + line*dCol*dAmt;
+  }
+  return mix(col, dCol, clamp((1.0 - d)*dAmt*(0.65 + 0.35*kick), 0.0, 1.0));   // haze: air by depth
+}
 void main(){
   vec2 p = uv;
   float seed = floor(time*12.0);
@@ -166,6 +200,10 @@ void main(){
   if (hasMA > 0.5){ vec2 q = xform(p, xfA, gA2.z, gA2.w); q.y = 1.0 - q.y; mA = texture(tMA, q).r; }
   if (hasMB > 0.5){ vec2 q = xform(p, xfB, gB2.z, gB2.w); q.y = 1.0 - q.y; mB = texture(tMB, q).r; }
   float matte = mix(mA, mB, mixAB);
+  float dA = 0.0, dB = 0.0;
+  if (hasDA > 0.5){ vec2 q = xform(p, xfA, gA2.z, gA2.w); q.y = 1.0 - q.y; dA = texture(tDA, q).r; }
+  if (hasDB > 0.5){ vec2 q = xform(p, xfB, gB2.z, gB2.w); q.y = 1.0 - q.y; dB = texture(tDB, q).r; }
+  DEPTH = mix(hasDA > 0.5 ? dA : dB, hasDB > 0.5 ? dB : dA, mixAB);
   vec3 col = a;
   if (mixAB > 0.0) col = mix(a, layer(tB, p, xfB, gB1, gB2, gofs, genB), mixAB);
   if (opC > 0.0){
@@ -175,6 +213,7 @@ void main(){
     else if (blendC < 2.5) col = max(col, c);
     else col = abs(col - c);
   }
+  col = depthTreat(col, uv);
   col = fxComp(col, uv, matte);
   vec3 prev = texture(tPrev, uv).rgb;
   if (glitch > 0.0){
@@ -183,7 +222,8 @@ void main(){
   }
   if (echo > 0.0) col = mix(col, prev, echo);
   if (trail > 0.0) col = max(col, prev*trail);
-  o = vec4(col, matte);
+  float key = dBehind > 0.0 && max(hasDA, hasDB) > 0.5 ? smoothstep(dBehind - 0.04, dBehind + 0.04, DEPTH) : 0.0;
+  o = vec4(col, max(matte, key));   // behind-layer type tucks behind the person and anything nearer than dBehind
 }
 """
 
@@ -317,23 +357,28 @@ FINAL = (FINAL.replace("SHADOW_TINT_VALUE", "vec3(%.4f,%.4f,%.4f)" % SHADOW_TINT
 
 def seg_file(src, t_in, need, speed, rev):
     crop = "" if src == "BLACK" or is_gen(src) else ",".join(f"{v:.4f}" for v in crop_for(src))
-    key = f"{src}|{t_in:.3f}|{need:.3f}|{speed:.4f}|{rev}|{crop}"
+    key = f"{src}|{t_in:.3f}|{need:.3f}|{speed:.4f}|{rev}|{crop}" + ("" if (SW, SH) == (1280, 720) else f"|{SW}x{SH}")
     return SEG / (src + "_" + hashlib.md5(key.encode()).hexdigest()[:10] + ".mp4")
 
 
 def prep_one(job):
     src, t_in, need, speed, rev, out = job[:6]
-    is_matte = len(job) > 6 and job[6]
+    kind = {True: "matte"}.get(job[6], job[6]) if len(job) > 6 else None   # None, "matte" or "depth"
+    is_matte = kind is not None
     if src == "BLACK" or is_gen(src) or out.exists():
         return
-    if is_matte and not (is_ai(src) and matte_path(src).exists()):
-        # archive shot flagged matte=True: segment the prepared color segment with rembg
-        from make_matte import matte_video
-        color = Path(str(out).replace("_m.mp4", ".mp4"))
-        if color.exists():
+    own = matte_path(src) if kind == "matte" else depth_path(src) if kind == "depth" else None
+    if kind and not (is_ai(src) and own.exists()):
+        # archive shot flagged matte=True or depth=True: compute it on the prepared color segment
+        color = Path(str(out).replace("_m.mp4", ".mp4").replace("_d.mp4", ".mp4"))
+        if not color.exists():
+            print(kind, "skipped, color segment missing:", color)
+        elif kind == "matte":
+            from make_matte import matte_video
             matte_video(color, out, log=False)
         else:
-            print("matte skipped, color segment missing:", color)
+            from make_depth import depth_video
+            depth_video(color, out, log=False)
         return
     x, y, w, h = crop_for(src)
     blend = speed < 0.85
@@ -350,7 +395,7 @@ def prep_one(job):
         vf = [v for v in vf if not v.startswith(("setpts", "framerate", "reverse"))]
     else:
         inp = ["-ss", f"{t_in:.3f}", "-t", f"{need * speed + 0.4:.3f}",
-               "-i", str(matte_path(src) if is_matte else src_path(src))]
+               "-i", str(own if is_matte else src_path(src))]
     cmd = ["ffmpeg", "-v", "error", "-y", *inp, "-an", "-vf", ",".join(vf), "-c:v", "libx264", "-crf", "12",
            "-preset", "veryfast", "-pix_fmt", "yuv420p", str(out)]
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -410,6 +455,14 @@ class Track:
             return bytes(SW * SH * 3)
         return self.reader(seg).get(max(0, int(round(local * FPS))))
 
+    def depth(self, seg, local):
+        f = seg.get("dfile")
+        if not f:
+            return None
+        if f not in self.readers:
+            self.readers[f] = Reader(f, gray=True)
+        return self.readers[f].get(max(0, int(round(local * FPS))))
+
     def matte(self, seg, local):
         f = seg.get("mfile")
         if not f:
@@ -453,7 +506,10 @@ def build_jobs(edl):
         jobs.append(((s["src"], s["in"], need, s.get("speed", 1.0), s.get("rev", False), Path(s["file"])), s))
         if s["src"] != "BLACK" and not is_gen(s["src"]) and (s.get("matte") or (is_ai(s["src"]) and matte_path(s["src"]).exists())):
             s["mfile"] = s["file"].replace(".mp4", "_m.mp4")
-            jobs.append(((s["src"], s["in"], need, s.get("speed", 1.0), s.get("rev", False), Path(s["mfile"]), True), s))
+            jobs.append(((s["src"], s["in"], need, s.get("speed", 1.0), s.get("rev", False), Path(s["mfile"]), "matte"), s))
+        if s["src"] != "BLACK" and not is_gen(s["src"]) and (s.get("depth") or (is_ai(s["src"]) and depth_path(s["src"]).exists())):
+            s["dfile"] = s["file"].replace(".mp4", "_d.mp4")
+            jobs.append(((s["src"], s["in"], need, s.get("speed", 1.0), s.get("rev", False), Path(s["dfile"]), "depth"), s))
     for s in edl.get("over", []):
         need = s["dur"] + 0.1
         s["file"] = str(seg_file(s["src"], s["in"], need, s.get("speed", 1.0), s.get("rev", False)))
@@ -461,13 +517,16 @@ def build_jobs(edl):
     return jobs
 
 
+_MH = max(2, int(round(96 * SH / SW / 2)) * 2)
+
+
 def subject_x(mfile):
-    """Horizontal center (0..1 of the 16:9 segment) of the person in a matte segment."""
-    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", mfile, "-vf", "fps=4,scale=96:54,format=gray",
+    """Horizontal center (0..1 of the segment) of the person in a matte segment."""
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", mfile, "-vf", f"fps=4,scale=96:{_MH},format=gray",
                           "-f", "rawvideo", "-"], capture_output=True).stdout
     if not raw:
         return 0.5
-    m = np.frombuffer(raw, np.uint8).reshape(-1, 54, 96).astype(float).mean(0)
+    m = np.frombuffer(raw, np.uint8).reshape(-1, _MH, 96).astype(float).mean(0)
     col = m.sum(0)
     return float((col * (np.arange(96) + 0.5) / 96).sum() / col.sum()) if col.sum() > 50 else 0.5
 
@@ -513,9 +572,9 @@ def main():
     out_asp = W / H
     k = 1080.0 / min(W, H)
     global P1, P2, FINAL
-    P1 = P1.replace("ASP_VALUE", f"{out_asp:.6f}")
-    P2 = P2.replace("ASP_VALUE", f"{out_asp:.6f}")
-    FINAL = (FINAL.replace("ASP_VALUE", f"{out_asp:.6f}").replace("GRAIN_RES", f"vec2({W * k:.1f}, {H * k:.1f})")
+    P1 = P1.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}")
+    P2 = P2.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}")
+    FINAL = (FINAL.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}").replace("GRAIN_RES", f"vec2({W * k:.1f}, {H * k:.1f})")
              .replace("SCAN_RES", f"{H * k:.1f}"))
     edl = json.loads((ROOT / "data" / "edl.json").read_text())
     snap_edl(edl)
@@ -547,7 +606,7 @@ def main():
         list(ex.map(prep_one, mattes))
     print(f"prepped {len(todo)} segments", flush=True)
     if out_asp < 1.2:  # narrow output: center each matted shot on its person unless the EDL pans it
-        lim = 0.5 - 0.5 * out_asp / (16 / 9)
+        lim = max(0.0, 0.5 - 0.5 * out_asp / (SW / SH))
         for s in main_segs:
             if needed(s) and s.get("mfile") and "pan" not in s and Path(s["mfile"]).exists():
                 off = max(-lim, min(lim, subject_x(s["mfile"]) - 0.5))
@@ -578,6 +637,7 @@ def main():
     tOver = tex(W, H, 4)
     tBehind = tex(W, H, 4)
     tMA, tMB = tex(SW, SH, 1), tex(SW, SH, 1)
+    tDA, tDB = tex(SW, SH, 1), tex(SW, SH, 1)
     feats = np.load(ROOT / "data" / "audio_feats.npz")
     a_kick, a_hat, a_rms = feats["kick"], feats["hat"], feats["rms"]
     a_snare, a_spec = feats["snare"], feats["spec"]
@@ -637,17 +697,23 @@ def main():
             tB.write(mt.frame(seg, local))
             sa, la = prev, t - prev["start"]
             mixab = ease(local / seg["xd"])
-            keep = {prev["file"], seg["file"], prev.get("mfile"), seg.get("mfile")}
+            keep = {prev["file"], seg["file"], prev.get("mfile"), seg.get("mfile"), prev.get("dfile"), seg.get("dfile")}
             ma, mb = mt.matte(prev, t - prev["start"]), mt.matte(seg, local)
+            da, db = mt.depth(prev, t - prev["start"]), mt.depth(seg, local)
         else:
             tA.write(mt.frame(seg, local))
             sa, la = seg, local
-            keep = {seg["file"], seg.get("mfile")}
+            keep = {seg["file"], seg.get("mfile"), seg.get("dfile")}
             ma, mb = mt.matte(seg, local), None
+            da, db = mt.depth(seg, local), None
         if ma is not None:
             tMA.write(ma)
         if mb is not None:
             tMB.write(mb)
+        if da is not None:
+            tDA.write(da)
+        if db is not None:
+            tDB.write(db)
         if i + 1 < len(main_segs):
             keep.add(main_segs[i + 1]["file"])
         mt.gc(keep)
@@ -701,14 +767,29 @@ def main():
 
         # pass 1
         p1["tA"], p1["tB"], p1["tC"], p1["tPrev"], p1["tMA"], p1["tMB"] = 0, 1, 2, 3, 4, 5
+        p1["tDA"], p1["tDB"] = 6, 7
         tA.use(0)
         tB.use(1)
         tC.use(2)
         base[1 - ping].use(3)
         tMA.use(4)
         tMB.use(5)
+        tDA.use(6)
+        tDB.use(7)
         p1["hasMA"] = 1.0 if ma is not None else 0.0
         p1["hasMB"] = 1.0 if mb is not None else 0.0
+        p1["hasDA"] = 1.0 if da is not None else 0.0
+        p1["hasDB"] = 1.0 if db is not None else 0.0
+        # the shot's depth treatment (EDL depth_fx) cycles once per depth_rate beats from the shot's cut;
+        # contours light one more level each eighth
+        dfx = seg.get("depth_fx")
+        cyc = ((th - seg["start"]) / (BEAT * seg.get("depth_rate", 1.0))) if dfx else 0.0
+        p1["dTreat"] = float(DEPTH_FX.get(dfx, 0))
+        p1["dPhase"] = cyc - math.floor(cyc)
+        p1["dCount"] = min(14.0, 1.0 + math.floor(max(0.0, th - seg["start"]) / (BEAT / 2)))
+        p1["dAmt"] = float(seg.get("depth_amt", DEPTH_AMT.get(dfx, 0.0)))
+        p1["dCol"] = tuple(seg.get("depth_col", (1.0, 0.93, 0.8)))
+        p1["dBehind"] = float(seg.get("behind_depth", 0.0))
         p1["xfA"] = xf_uniform(sa, la)
         ga1, ga2 = grade_uniform(sa)
         p1["gA1"], p1["gA2"] = ga1, ga2
