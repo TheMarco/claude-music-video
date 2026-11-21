@@ -23,7 +23,10 @@ It runs in Claude Code on your own computer. In claude.ai chat or Cowork the ski
 render, since those have no local Python, ffmpeg or GPU.
 
 Developed and tested on macOS with Apple Silicon. Linux and Windows have fallbacks for fonts, lyrics
-transcription and headless OpenGL, but are untested.
+transcription and headless OpenGL, but are untested. Head tracking (which keeps every overlay off every
+face) uses Apple's Vision framework on macOS, through a small Swift helper compiled with `swiftc` from
+the Xcode command line tools; elsewhere it falls back to OpenCV face detection, which misses heads seen
+from behind, so the review sheets need a closer look there.
 
 ## Install
 
@@ -36,10 +39,37 @@ claude plugin install music-video-generator@music-video
 
 Or copy `plugins/music-video-generator/skills/music-video/` to `~/.claude/skills/music-video/`.
 
-The plugin itself holds only Markdown, JSON and its icon. The pipeline's Python scripts are in this
-repository's `engine/` folder; on first use the skill downloads that folder from GitHub, pinned to one
-commit (`ENGINE_REV` in `SKILL.md`), into `~/.claude/music-video/engine/<commit>/`, and copies the
-scripts into each project from there.
+The plugin itself holds only Markdown, JSON and its icon. The pipeline's Python scripts (the engine)
+are in this repository's `engine/` folder, and you install them yourself, once per engine version (next
+section). The skill copies them into each project from there.
+
+### Install the engine
+
+The skill is pinned to one engine commit (`ENGINE_REV` in `SKILL.md`) and looks for it in
+`~/.claude/music-video/engine/<commit>/`. When it isn't there, the skill stops and sends you here. The
+current version is `fbd5bf8`:
+
+```
+ENGINE_REV=fbd5bf83702de3987889953c9b14c9f0921904ff
+DEST="$HOME/.claude/music-video/engine/$ENGINE_REV"
+mkdir -p "$DEST" &&
+curl -fsSL "https://codeload.github.com/TheMarco/claude-music-video/tar.gz/$ENGINE_REV" |
+  tar -xz -C "$DEST" --strip-components=2 "claude-music-video-$ENGINE_REV/engine" &&
+ls "$DEST/template/mv/scripts/render.py"
+```
+
+This unpacks only the repository's `engine/` folder at that commit; nothing runs during the install, and
+every file is plain Python you can read first. With git instead:
+
+```
+git clone https://github.com/TheMarco/claude-music-video.git && cd claude-music-video
+git checkout fbd5bf83702de3987889953c9b14c9f0921904ff
+mkdir -p ~/.claude/music-video/engine/fbd5bf83702de3987889953c9b14c9f0921904ff
+cp -R engine/. ~/.claude/music-video/engine/fbd5bf83702de3987889953c9b14c9f0921904ff/
+```
+
+After an update of the plugin the skill may ask for a newer engine: run the same steps with the commit
+it names. Older engine folders can stay; projects made with them keep working.
 
 ## Use
 
@@ -63,7 +93,7 @@ accepted videos lives in `~/.claude/music-video/`.
 Everything runs on your machine: Python scripts copied into each project, ffmpeg, and a GPU compositor.
 Every request the scripts make is anonymous. Network access:
 - github.com: the pipeline scripts, this repository's `engine/` folder at the commit pinned in
-  `SKILL.md`, downloaded once per engine version with `curl` from codeload.github.com
+  `SKILL.md`, which you download yourself during install ("Install the engine")
 - archive.org: searching and downloading public-domain and openly licensed films, anonymously
   (`ia_search.py`, `ia_fetch.py`)
 - your video-generation MCP, only through its own tools: prompts, and the reference photos you choose
@@ -99,9 +129,10 @@ path/to/.venv/bin/python engine/scripts/smoke_test.py
 ```
 
 It pushes a synthetic song and test-pattern clips through analysis, the grid check, the edit, stills,
-a full render, a vertical hook and QC, and stops at the first step that fails. Then commit, set
-`ENGINE_REV` in `plugins/music-video-generator/skills/music-video/SKILL.md` to that commit and raise
-`version` in `plugin.json`, so installs download the new engine.
+a full render, a vertical hook, QC and the face and contrast checks, and stops at the first step that
+fails. Then commit, set `ENGINE_REV` in `plugins/music-video-generator/skills/music-video/SKILL.md` and
+in "Install the engine" above to that commit, and raise `version` in `plugin.json`. The plugin itself
+never downloads the engine: the skill checks for it and sends users to "Install the engine".
 
 `evals/evals.json` holds test prompts for the skill itself, with what a good run does for each. Run
 them after changing `SKILL.md` or the references.

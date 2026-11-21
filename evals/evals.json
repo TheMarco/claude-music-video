@@ -10,7 +10,7 @@
       "expectations": [
         "Asks the brief questions in one message, each with a default, including the language the lyrics are sung in",
         "Does not generate clips, download footage or render before an explicit go",
-        "Tells the user that the engine scripts are fetched from the repository at a pinned commit",
+        "Checks that the pinned engine is installed and, when it is not, stops and sends the user to the README's install steps without downloading it",
         "Does not use a multiple-choice question UI"
       ]
     },

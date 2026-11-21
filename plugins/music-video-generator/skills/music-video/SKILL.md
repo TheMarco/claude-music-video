@@ -24,28 +24,24 @@ they always want, their credit line, something they never want to see again), ad
 that you did. One-off choices for a single video go in the project's notes, not here.
 
 **The engine.** The pipeline scripts are not part of the plugin. They live in the `engine/` folder of
-the skill's public repository, github.com/TheMarco/claude-music-video, and are downloaded once per
-engine version, pinned to one commit, into `~/.claude/music-video/engine/<commit>/`. `$ENGINE` below
-means that folder:
+the skill's public repository, github.com/TheMarco/claude-music-video, pinned to one commit, and the
+user installs them once per engine version into `~/.claude/music-video/engine/<commit>/`, following
+"Install the engine" in that repository's README. `$ENGINE` below means that folder:
 
 ```bash
 SKILL="<base directory>"
-ENGINE_REV=ff65b9cc1c5e1af83ffb93343e506ce155699d08
+ENGINE_REV=fbd5bf83702de3987889953c9b14c9f0921904ff
 ENGINE="$HOME/.claude/music-video/engine/$ENGINE_REV"
-if [ ! -f "$ENGINE/template/mv/scripts/render.py" ]; then
-  TMP="$ENGINE.part" && rm -rf "$TMP" "$ENGINE" && mkdir -p "$TMP" &&
-  curl -fsSL "https://codeload.github.com/TheMarco/claude-music-video/tar.gz/$ENGINE_REV" |
-    tar -xz -C "$TMP" --strip-components=2 "claude-music-video-$ENGINE_REV/engine" &&
-  [ -f "$TMP/template/requirements.txt" ] && mv "$TMP" "$ENGINE"
-fi
 ```
 
 Shell variables don't carry over from one command to the next. Start every command that uses `$SKILL`,
-`$ENGINE` or `$ENGINE_REV` with the three assignment lines above; the `if` block is needed only once.
+`$ENGINE` or `$ENGINE_REV` with these three lines.
 
-Tell the user once, before the first download, that the skill fetches its scripts from that repository
-at that commit. It is setup, a small set of scripts, and the one download that doesn't wait for the go
-in "Working rules". The template in it (`$ENGINE/template/mv/scripts/`) is a working pipeline. Copy it
+**Check for the engine before anything else:** `test -f "$ENGINE/template/mv/scripts/render.py"`. When
+it is missing, stop. Tell the user this skill needs engine version `fbd5bf8`, give them
+https://github.com/TheMarco/claude-music-video#install-the-engine, and wait for them to say it is
+installed. They run those steps themselves: don't download or install the engine for them, and don't
+fall back to an older engine folder that happens to be there. Then check again and go on. The template in it (`$ENGINE/template/mv/scripts/`) is a working pipeline. Copy it
 into each new project. Three files belong to the video and get written for it: `edl.py` (the cut),
 `look.py` (palettes, grades, the finish) and `fx.py` (its overlays and shaders). The rest is the engine.
 
@@ -119,6 +115,15 @@ These matter more than any technique below.
   video. Overlays, type and short accents sit on top of it. Reframing the footage into cards, panels or
   pages, or restyling the whole picture as print, a diagram or an exhibit, turns a music video into
   something that reads like a textbook.
+- **Nothing covers a face.** No word, card, caption, gag, credit, particle or fine print sits on a face at
+  any frame it is on screen: the performer's from the front, the side or behind, close up or small in a
+  wide, and every other face the detector finds. Positions come from heads tracked on every frame, not
+  from a guess at a block's first frame, and `facecheck.py` passes before a render is shown (Phase 6,
+  "Faces stay clear").
+- **Every overlay reads against its picture.** Each word, card, caption and line of fine print keeps
+  enough contrast with the shot behind it on every frame it is on screen: 3:1 for large type, 4.5:1 for
+  small type, and cards that stand apart from the picture. `contrastcheck.py` measures it and passes
+  before a render is shown (Phase 6, "Contrast").
 - **Each video gets its own identity.** Videos that share overlays (a HUD frame, a spectrum analyzer,
   the same title and word styles) look like one family even when each adds something new. New
   signature overlays, type and title for every song (Phase 3).
@@ -224,7 +229,10 @@ project's own `edl.py`, `look.py` and `fx.py`, write the new `ENGINE_REV`, and i
 requirements again. The part of `edl.py` below its EDIT block is engine too: carry the template's
 changes there into the project's copy, keeping any project additions, and re-run `edl.py`. A project from engine
 1.1.0 or earlier also needs the four-line `fx.py` change in `references/compositor.md` ("The picture
-never trails the sound"), or its beat-timed accents land a frame after the cuts. Render stills at 4-6
+never trails the sound"), or its beat-timed accents land a frame after the cuts. A project from before
+engine fbd5bf8 gets `heads.py`, `facecheck.py` and `contrastcheck.py` with the update, but its `fx.py`
+still places and draws blocks its own way: run all three, move any block `facecheck.py` lists onto
+`ov.place`, and outline the type `contrastcheck.py` lists. Render stills at 4-6
 moments with both and compare before changing anything else.
 
 ## Phase 2: the song
@@ -456,6 +464,12 @@ Few long takes in a fast song read as stuck, and twice the cuts reads as noise. 
 on top (match cuts, repetition, freezes, ramps), as chosen in Phase 3. Save the most striking footage
 for the moments the song builds to.
 
+**A face that is revealed is seen whole before the cut.** A tilt up to a face, a turn to camera or a walk
+into frame holds until the whole face has been on screen for about a beat; move the in-point or the
+length rather than cutting on half a face. Check the last frames of every such shot. (A tilt from cupped
+hands up to the face once cut away at the lips; starting the take 1.25 s later gave the face a full
+second.)
+
 **Check every shot before rendering.** `.venv/bin/python mv/scripts/contact.py mv/work/shots --edl`
 makes contact sheets of every shot at its midpoint, cropped as rendered, and prints a brightness report.
 Look at all of them: title cards, in-points on the wrong side of a cut, shots too dark to read. Shots
@@ -476,18 +490,37 @@ for the edit. `fx.py`: overlays
 tricks, light and accents, and per-frame uniforms from the audio and song position (they can also drive
 any engine value). The engine draws nothing by itself and stays untouched.
 `$ENGINE/examples/fx_examples.py` shows the mechanics; it is not a kit. `references/compositor.md`
-documents the engine, the per-shot options and the `fx.py` hooks.
+documents the engine, the per-shot options and the `fx.py` hooks, and "Keeping faces clear" in it how
+every block stays off every face.
 
 ```bash
 .venv/bin/python mv/scripts/contact.py mv/work/shots --edl                       # every shot + brightness
+.venv/bin/python mv/scripts/heads.py                     # head boxes, every frame (--size 540x960 for 9:16)
 .venv/bin/python mv/scripts/render.py mv/work/stills/s --stills 8,30,48,62,110,152,196
 .venv/bin/python mv/scripts/sheet.py mv/work/stills/s mv/work/stills/sheet
+.venv/bin/python mv/scripts/facecheck.py --size 1920x1080   # every frame's overlay against the heads
+.venv/bin/python mv/scripts/contrastcheck.py --size 1920x1080   # every element against its picture
 .venv/bin/python mv/scripts/render.py mv/out/<name>_v1.mp4                         # full render
 .venv/bin/python mv/scripts/beatsheet.py mv/out/<name>_v1.mp4 mv/work/drop1.jpg <drop_time> 32   # one frame per beat
 .venv/bin/python mv/scripts/qc.py mv/out/<name>_v1.mp4 --ignore-after <end>
 .venv/bin/python mv/scripts/render.py mv/out/<name>_9x16.mp4 --size 1080x1920      # vertical cut
 .venv/bin/python mv/scripts/render.py mv/out/<name>_hook.mp4 --size 1080x1920 --start <drop> --end <8 or 16 bars later>
 ```
+
+**Faces stay clear.** Once the edit is cut, `heads.py` renders it without overlays and tracks every head
+on every frame into `mv/data/heads.json`; run it again after every EDL change. Look at each of its
+sheets (`mv/review/heads_NN.jpg`) and add the heads it missed, back views and small figures above all,
+in `mv/data/heads_manual.json`. `fx.py` places every block with `ov.place` over the block's whole time
+on screen, so a block moves at a cut or shrinks rather than sit on a face, and `facecheck.py` at the
+output size has to pass (exit 0) before stills or renders go to the user. `references/compositor.md`,
+"Keeping faces clear", has the method and the rules that came out of it.
+
+**Contrast.** `contrastcheck.py` at the output size scores every element of the overlay against the
+bare picture around it (heads.py's clean frames), frame by frame, and lists anything short of 3:1
+(large type), 4.5:1 (small type) or 1.5:1 (a card's edge) for a quarter second or more, with review
+sheets in `mv/review/contrast_NN.jpg`. It has to pass as well. Light type with a dark outline and a
+soft shadow reads on any shot; a shadow alone does not hold white type on a white jacket or a bright
+sky. `references/compositor.md`, "Contrast", has the fixes.
 
 **Judge the stills before the full render**, at the drops, the loudest chorus, the breakdown, the intro
 and the end card. The y-flip, palette and exposure mistakes all show up there. Don't approve your own
