@@ -26,6 +26,11 @@ draw_front(ov, d, t, f, ctx)    draws over everything with the PIL ImageDraw d.
               timing, audio arrays indexed by frame f, kick and snare onsets). ctx has the shot's src,
               label, local time and duration.
 
+Nothing drawn in front may cover a face, at any frame it is on screen. Place every word, card, caption
+and credit with ov.place(...) against the heads that heads.py tracked, lay the blocks out once in order
+of appearance, and let facecheck.py check the result (references/compositor.md, "Keeping faces clear";
+example 5 in examples/fx_examples.py).
+
 Prototype each effect on a still sheet before a full render. references/effects-ideas.md has the
 method; examples/fx_examples.py in the engine folder ($ENGINE in SKILL.md) shows the mechanics.
 """

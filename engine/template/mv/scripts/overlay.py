@@ -17,6 +17,15 @@ Helpers for fx.py, all sized in 1080p units so one design works at 16:9, 9:16, 1
                                                   line and word being sung at t
   audio arrays indexed by frame f: ov.spec (48 bands), ov.peaks (falling peak hold), ov.rms, ov.kick,
   ov.snare, ov.hat, ov.wave (256-sample waveform); onset times ov.kicks, ov.snares
+Faces (mv/data/heads.json from heads.py; without it these see no faces and say so once):
+  ov.heads(t, pad=True)                           head boxes on screen at t, px rects, padded by HEAD_PAD
+  ov.touches_face(rect, t)                        True when rect touches an unpadded head box at t
+  ov.place(key, t0, t1, bw, bh, xs, prefer, t)    (x, centre y, scale) for a bw x bh block held from t0 to
+                                                  t1, clear of every head and every block placed before it:
+                                                  one spot for the whole span when there is one, else one
+                                                  per shot (it moves on the cut), a wider band and smaller
+                                                  sizes before giving up. Cached per key; misses land in
+                                                  ov.place_misses, which facecheck.py reports.
 Module helpers: hash01(*key) for stable per-frame randomness, keyframes(t, [(t, v), ...]), and F / FS,
 the macOS system font folders.
 """
@@ -30,7 +39,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent))
 from look import FINISH  # noqa: E402
-from timing import FPS  # noqa: E402
+from timing import FPS, on_frame  # noqa: E402
 
 F = "/System/Library/Fonts/"                    # macOS system fonts
 FS = "/System/Library/Fonts/Supplemental/"
@@ -84,6 +93,7 @@ class Overlay:
         self.peaks = self._peaks(self.spec)
         self.kicks = self._onsets(self.kick, 0.55, 0.22)
         self.snares = self._onsets(self.snare, 0.6, 0.18)
+        self._load_heads()
 
     # ---- precompute -------------------------------------------------------
     @staticmethod
@@ -179,6 +189,97 @@ class Overlay:
                         return ln, i
                 return ln, -1
         return None, -1
+
+    # ---- faces --------------------------------------------------------------
+    HEAD_PAD = (0.03, 0.022)               # fraction of width, height: clears text shadows and pop overshoot
+    BANDS = ((0.10, 0.80), (0.05, 0.94))   # the feed's safe band, then the wider band a face can force
+
+    def _load_heads(self):
+        p, e = Path("mv/data/heads.json"), Path("mv/data/edl.json")
+        self._heads = json.loads(p.read_text())["frames"] if p.exists() else None
+        self._cuts = sorted({on_frame(s["start"]) for s in json.loads(e.read_text())["main"]}) if e.exists() else []
+        self._placed, self._reg, self.place_misses, self._warned = {}, [], [], False
+
+    def heads(self, t, pad=True):
+        """Head boxes on screen at frame time t, as (x0, y0, x1, y1) px rects."""
+        if self._heads is None:
+            if not self._warned:
+                print("overlay: no mv/data/heads.json, so nothing is kept clear of faces (run heads.py)")
+                self._warned = True
+            return []
+        px, py = self.HEAD_PAD if pad else (0.0, 0.0)
+        return [((b[0] - px) * self.w, (b[1] - py) * self.h, (b[2] + px) * self.w, (b[3] + py) * self.h)
+                for b in self._heads.get(str(int(round(t * FPS))), [])]
+
+    @staticmethod
+    def _hit(a, b):
+        return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
+
+    def touches_face(self, rect, t):
+        return any(self._hit(rect, f) for f in self.heads(t, pad=False))
+
+    def _span_heads(self, a, b, extra, key=None):
+        """Heads over a..b, plus extra rects and every block already placed for any part of a..b."""
+        rects, tt = list(extra), a
+        for k2, sched, bw, bh in self._reg:
+            if k2 != key:
+                rects += [(x, y - bh * k / 2, x + bw * k, y + bh * k / 2)
+                          for pa, pb, (x, y, k) in sched if pa < b and a < pb]
+        while tt < b:
+            rects += self.heads(tt)
+            tt += 1.0 / 12
+        return rects + self.heads(max(a, b - 1.0 / FPS))
+
+    def _find(self, rects, bw, bh, xs, prefer, bands, scales, keep=None):
+        tries = [(k, band) for k in scales for band in bands]
+        if keep:
+            tries.insert(0, (keep[2], None))
+        for k, band in tries:
+            w, h = bw * k, bh * k
+            if band is None:
+                cands, lo, hi = [keep[:2]], -1e9, 1e9
+            else:
+                lo, hi = band[0] * self.h + h / 2, band[1] * self.h - h / 2
+                ys = sorted(np.arange(lo, hi + 1, 8 * self.s), key=lambda y: abs(y - prefer * self.h))
+                # a smaller block keeps its side: left edge, centre or right edge, whichever x was
+                cands = [(x + (bw - w) * (0.0 if x < 0.15 * self.w else 1.0 if x + bw > 0.85 * self.w else 0.5), y)
+                         for y in ys for x in xs]
+            for x, yc in cands:
+                if lo - 1 <= yc <= hi + 1 and not any(self._hit((x, yc - h / 2, x + w, yc + h / 2), f) for f in rects):
+                    return (x, yc, k)
+        return None
+
+    def place(self, key, t0, t1, bw, bh, xs, prefer, t=None, extra=(), scales=(1.0, 0.85, 0.72, 0.6), bands=None):
+        """(x, centre y, scale) for a block of bw x bh px (its full footprint: shadow, pop overshoot, slide-in
+        and anything that grows out of it) shown from t0 to t1. xs: left edges to try, at full size; prefer:
+        the centre line wanted, as a fraction of the height; extra: rects to avoid besides heads (other blocks).
+        Scale the block by the returned factor; draw it at the position given for the frame's own time t.
+        Every placed block is remembered and later ones keep clear of it, so place blocks in the order they
+        appear: call each draw function once at every block's start time before the first frame (see
+        "Keeping faces clear" in references/compositor.md), or a render that starts mid-song lays out
+        differently from the full one."""
+        bands = bands or self.BANDS
+        if key not in self._placed:
+            got = self._find(self._span_heads(t0, t1, extra, key), bw, bh, xs, prefer, bands[:1], scales[:1])
+            if got:
+                sched = [(t0, t1, got)]
+            else:
+                cuts = sorted({t0, t1} | {c for c in self._cuts if t0 < c < t1})
+                sched, prev = [], None
+                for a, b in zip(cuts, cuts[1:]):
+                    got = self._find(self._span_heads(a, b, extra, key), bw, bh, xs, prefer, bands, scales, keep=prev)
+                    if not got:
+                        got = prev or (xs[0], prefer * self.h, scales[-1])
+                        self.place_misses.append((key, round(a, 2), round(b, 2)))
+                    sched.append((a, b, got))
+                    prev = got
+            self._placed[key] = sched
+            self._reg.append((key, sched, bw, bh))
+        tt = t0 if t is None else t
+        for a, b, got in self._placed[key]:
+            if a <= tt < b:
+                return got
+        return self._placed[key][-1][2]
 
     # ---- main -------------------------------------------------------------
     def frame(self, t, ctx=None):

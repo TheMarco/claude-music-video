@@ -2,6 +2,7 @@
 
 Usage:
   .venv/bin/python mv/scripts/render.py OUT.mp4 [--size 1920x1080] [--start S] [--end E] [--exact] [--stills T1,T2,...]
+                                         [--clean]
   --start/--end render part of the song (a hook for Reels, TikTok or Shorts). Both move to the nearest
   bar line, so the cut runs whole bars and a platform's auto-replay restarts on the beat; --exact keeps
   the times as given. The audio of a part gets a 3 ms fade at each cut edge so it doesn't click.
@@ -23,6 +24,7 @@ Sources can also be GEN_GRID, GEN_PLASMA or GEN_TUNNEL: procedural backgrounds d
 that pulse with the kick, for visualizers and footage-free sections.
 With --stills it writes JPEGs (OUT_<time>.jpg) instead of a video, rendering a 0.6 s warm-up before
 each still so feedback effects look the same as in the full render.
+With --clean it leaves out every overlay: the bare picture that heads.py finds the faces in.
 
 This file is the engine and has no style of its own. Per video: look.py (palettes, grades and the
 finish: grain, bloom, glints, letterbox, drop flashes, all off by default) and fx.py (this video's
@@ -504,6 +506,7 @@ def main():
     ap.add_argument("--size", default="1920x1080", help="WxH, e.g. 1080x1920 for vertical")
     ap.add_argument("--stills", default="")
     ap.add_argument("--exact", action="store_true", help="keep --start/--end as given, not on bar lines")
+    ap.add_argument("--clean", action="store_true", help="picture only, no overlays (heads.py renders this)")
     args = ap.parse_args()
 
     W, H = map(int, args.size.lower().split("x"))
@@ -739,7 +742,8 @@ def main():
         v1.render(moderngl.TRIANGLE_STRIP)
 
         # pass 2: text (the EDL's end-card tail is BLACK, so fx.py can draw the end card in any pass)
-        ob, o = ov.frame(t, {"src": seg["src"], "local": local, "dur": seg["dur"], "label": seg.get("label")})
+        ob, o = (None, None) if args.clean else ov.frame(
+            t, {"src": seg["src"], "local": local, "dur": seg["dur"], "label": seg.get("label")})
         p2["tBase"], p2["tOver"], p2["tBehind"] = 0, 1, 2
         base[ping].use(0)
         if o is not None:
