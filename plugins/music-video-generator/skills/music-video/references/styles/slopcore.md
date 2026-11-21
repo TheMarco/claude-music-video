@@ -45,7 +45,8 @@ video to video"), never from leaving parts out.
    scoring paddles on a probability, a hand on a phone on a notification. Cut between the face, hands
    with the prop, and wides with a crowd or a city.
 3. **The sung words, big.** Heavy condensed capitals in stacks of one to six rows, each word popping in
-   at its sung time, set in the empty side of the frame and never over a face (the singer's from any
+   at its sung time, with a dark outline and a soft shadow so it reads on every shot, set in the empty
+   side of the frame and never over a face (the singer's from any
    angle, the back of the head included, or anyone else's), alternating sides from line to line. The key word or two of each line in the accent colour. A second, lighter typeface (an
    italic serif) for asides, whispers and the bridge. On the hook or a punchline, one word fills the
    frame.
@@ -162,7 +163,9 @@ In the order that worked:
    mv/scripts/render.py mv/work/stills/d --stills 2,6,10,...`, then `sheet.py`), checked against
    "Density" above. Fewer big elements than two frames in three means more gags or more words before
    rendering.
-5. **Faces clear, checked.** `heads.py` after the edit is final, every head sheet looked at and
-   corrected, then `facecheck.py` at the output size, which has to pass before anything is shown. In an
-   extreme close-up there is often no room: give that shot no type, or end the line before the face
-   fills the frame.
+5. **Faces clear and contrast, checked.** `heads.py` after the edit is final, every head sheet looked
+   at and corrected, then `facecheck.py` and `contrastcheck.py` at the output size, which both have to
+   pass before anything is shown. In an extreme close-up there is often no room: give that shot no type,
+   or end the line before the face fills the frame. Slopcore cuts between night interiors, bright skies
+   and white outfits, so type that reads on one shot washes out on the next: outline it, and give dark
+   cards a lighter rim.

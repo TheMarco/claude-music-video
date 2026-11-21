@@ -10,6 +10,7 @@
 - Film grain
 - Graphics and text (fx.py drawing)
 - Keeping faces clear
+- Contrast
 - Shaders and uniforms (fx.py)
 - Audio data
 - Lyrics
@@ -228,6 +229,38 @@ their boxes.
 where overlay pixels (above 15% opacity) fall inside a head box, and the blocks that found no clear spot.
 It exits 1 when it lists anything, and a render that fails it is not shown to the user. It can only check
 heads that have boxes, so the sheets come first.
+
+## Contrast
+
+Every element drawn in front has to read against the picture it lands on, on every shot it spans.
+`contrastcheck.py --size <output size>` measures it from heads.py's clean frames. It splits each frame's
+overlay into elements (the words of a line joined, lines and cards apart), and scores each element's
+luminance against the luminance right around it as a contrast ratio, (L1 + 0.05) / (L2 + 0.05):
+
+- Light type is measured against the brighter fifth of its surroundings with its shadow (the shadow is
+  what holds it), dark type against the darker fifth of the bare picture. Type needs 3:1 when large and
+  4.5:1 when under 2.5% of the frame height, the WCAG levels for large and small text.
+- Type with its own outline (a dark stroke round light letters, or the reverse) is scored by the outline
+  against the fill, since that reads on any picture.
+- A card (a solid core wider than 9% of the frame) needs 1.5:1 against the typical part of its
+  surroundings, by its fill or by its rim. Its own text sits on its own fill.
+
+It exits 1 when an element is short for 0.25 s or more and draws each case into
+`mv/review/contrast_NN.jpg`. Run it at the output size: at half size a 2 px outline on 23 px type
+doesn't resolve.
+
+What fixed a slopcore video that failed it 151 times:
+- A dark outline on all light type: `stroke_width` about 2% of the font size (3% for a thin serif, 2-3 px
+  at 1080 for fine print) and `stroke_fill` a near-black ink, under a soft drop shadow and a tight one
+  (radius 4-5 px).
+- Fine print at full strength, not 60% white, with the same outline.
+- A rim on dark cards, a 3 px outline a few steps lighter than the fill, so a dark card on a dark shot
+  still has an edge.
+- Glass and hollow letterforms with a dark edge outside their light outline.
+
+`ov.backdrop(rect, t)` returns the bare picture's luminance under a rect (mean, 10th and 90th
+percentile), for choosing a treatment per shot: dark type on a bright sky, a stronger shadow on a busy
+shot, a darker part of the frame.
 
 ## Shaders and uniforms (fx.py)
 
