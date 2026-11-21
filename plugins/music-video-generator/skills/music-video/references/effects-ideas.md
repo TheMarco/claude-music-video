@@ -31,6 +31,27 @@ The bar is the strongest slopcore references (`references/styles/slopcore.md`): 
 a reason a viewer gets in a second, and none is decoration. Invent to that bar for each video. Take the
 reasons, never their effects; the examples below are illustrations, not a list to pick from.
 
+**One explaining graphic per line.** Every sung or written line gets a graphic that shows what it means,
+besides its type: it enters on the word that names it, moves in beats, and reads in one glance on a
+phone. This is the layer that most separates a rich video from a decorated one. Find it with these
+questions, in order, and stop at the first that gives a picture:
+
+1. Does the line claim a number? A counter, a chart, a gauge, a before-and-after strike.
+2. Is the joke about an interface? Draw that interface: a terminal, a chat, a poll, a status card.
+3. Is there an object or a person in frame that can carry it? Label it, measure it, classify it (a
+   detection tag with a wrong or funny class, a callout on the thing).
+4. Does it describe a mechanism? A diagram of it, a flow, a plan view.
+5. Does it name a place? A map, coordinates, a route.
+6. What is at stake? A readout that ticks toward something.
+7. Is it a callback? The earlier graphic, one step further.
+
+The engine's device library (`devices.py`, references/compositor.md "Explaining graphics") draws most of
+these answers: start from a device and fill it with the line's own facts, in the video's style; write
+new code for the video's signature overlays and for a line no device fits. One graphic escalates across
+the whole video (a reading that climbs, a poll that swings, a board that counts down): pick it in the
+concept. The budget per frame is one main graphic, up to two labels on people or things, up to two rows
+of micro type; a line whose picture already explains itself can go without.
+
 - **The line, made physical.** Ask of each key line what it does, to whom, and what that would look like
   if it were real, then draw that. A line about being forgotten: the caption's oldest words fall off the
   top as new ones arrive, like a full context window. A line about being watched: the world outside the
@@ -38,13 +59,16 @@ reasons, never their effects; the examples below are illustrations, not a list t
   matte fills with the accent colour from the feet up across the line.
 - **The world's own medium.** The texture comes from what the story is made of: a newsroom story runs on
   newsprint, a story inside a phone on compression and screen glare, a courtroom on a sketch artist's
-  pastel, a story at sea on the glitter of the water. It can change when the story turns. Outside a
+  pastel, a story at sea on the glitter of the water. It can change when the story turns. The depth
+  treatments (references/compositor.md, "Depth") give the footage itself a medium from its own depth: a
+  light wave travelling into the picture on the beat, contour lines that turn a place into a map, a scan
+  that leaves a point cloud, haze; rotate them over the wides and leave most shots untreated. Outside a
   style that allows longer (slopcore's last act), a picture-wide medium stays a beat or two; between
   those beats it lives in the particles, the punctuation and the type.
-- **Depth from the matte.** Effects placed in space look expensive: a shape that passes behind the
-  person (`draw_behind`) and in front of them (`draw_front`, clear of the face), the world dropping to
-  black for a beat while the person stays lit, the world in one treatment and the person in another,
-  light coming from behind them.
+- **Depth from the matte and the depth map.** Effects placed in space look expensive: a shape that passes
+  behind the person (`draw_behind`) and in front of them (`draw_front`, clear of the face), the world
+  dropping to black for a beat while the person stays lit, the world in one treatment and the person in
+  another, light coming from behind them, a word tucked behind a tower or a rope (`behind_depth`).
 - **One punctuation of its own.** One move for the big hits (the drops, the finale), the same each time
   and invented from the concept, held long enough to read: about a beat held and a beat of motion out of
   it. The picture collapsing to the person's silhouette in white on black and opening back up, the
@@ -69,9 +93,11 @@ layer, and its timing (a hit, a hold, or an arc across the video). An effect wit
 
 Where each kind goes in the engine (`references/compositor.md`):
 
-- `GLSL_COMP`, `fxComp(col, uv, matte)`: per-pixel changes to the footage, with the person matte, under
-  the type: screens and textures, the world dropping out, the person tinted or filled. Type drawn in
-  `fx.py` stays sharp above it.
+- `devices.py` through a `Plan` in `fx.py`: the explaining graphics, placed clear of faces and lyrics.
+- The EDL's `depth_fx` and `behind_depth` per shot (after `make_depth.py`): the footage's depth medium.
+- `GLSL_COMP`, `fxComp(col, uv, matte)`: per-pixel changes to the footage, with the person matte and
+  `DEPTH`, under the type: screens and textures, the world dropping out, the person tinted or filled. Type
+  drawn in `fx.py` stays sharp above it.
 - `GLSL_FINAL` and the engine uniforms returned by `uniforms(t, a)` (`flash`, `invert`, `ca`, `punch`,
   `fade`): the whole frame, type included. Punctuation moves go here; a move that resamples the
   composited picture (`tComp`) adds the bloom textures (`tB1`, `tB2`) back itself.

@@ -11,7 +11,9 @@
 - Graphics and text (fx.py drawing)
 - Keeping faces clear
 - Contrast
+- Explaining graphics (devices.py)
 - Shaders and uniforms (fx.py)
+- Depth (make_depth.py)
 - Audio data
 - Lyrics
 - Fonts
@@ -25,16 +27,18 @@ graphic, title and overlay is designed per video in `look.py` and `fx.py`.
 
 `render.py` reads `edl.json`, `song.json` (through `timing.py`), `audio_feats.npz`, `look.py` and `fx.py`.
 
-1. **Segments.** ffmpeg cuts each shot from its source into `mv/work/seg/` at 1280x720/24 fps: crop to
-   16:9 (`media.crop_for`), speed change (motion-blended `framerate` below 0.85x), optional reverse,
-   light sharpening on AI clips. AI clips with `<CODE>_matte.mp4`, and archive shots with `matte=True`,
-   get a matching matte segment. Segment names hash source, in-point, length, speed, direction and crop,
+1. **Segments.** ffmpeg cuts each shot from its source into `mv/work/seg/` at 1280x720/24 fps (or
+   `look.SEG_SIZE`, "Output sizes"): crop to the segment aspect (`media.crop_for`), speed change
+   (motion-blended `framerate` below 0.85x), optional reverse, light sharpening on AI clips. AI clips with
+   `<CODE>_matte.mp4` or `<CODE>_depth.mp4`, and archive shots with `matte=True` or `depth=True`, get a
+   matching matte or depth segment. Segment names hash source, in-point, length, speed, direction and crop,
    so edits only re-cut what changed. Delete a clip's segments in `mv/work/seg/` after replacing the
    clip file itself.
 2. **Pass 1.** Per frame: transforms (zoom, pan, rotation, shake, mirror, kaleidoscope), gradient-map
-   grade, dissolve between shots, OVER-track double exposure (screen/add/lighten/difference), then
-   `fxComp` (with the person matte), echo and trail feedback from the previous frame, glitch. The
-   person matte travels in the alpha channel.
+   grade, dissolve between shots, OVER-track double exposure (screen/add/lighten/difference), the shot's
+   depth treatment ("Depth"), then `fxComp` (with the person matte and `DEPTH`), echo and trail feedback
+   from the previous frame, glitch. The person matte travels in the alpha channel, together with the
+   shot's `behind_depth` key.
 3. **Pass 2.** Letterbox bars (if `look.py` asks for them), then the `behind` layer where the person
    matte is empty, then the `front` layer over everything. Both layers come from `fx.py`.
 4. **Bloom.** Bright pass, then two blur levels.
@@ -47,7 +51,9 @@ instead, with a 0.6 s warm-up before each so echo and trails match the full rend
 ## Output sizes
 
 `--size WxH` sets the output: 1920x1080 by default, 1080x1920 for Reels/TikTok/Shorts, 1080x1080 or
-1080x1350 for feeds. Segments stay 16:9 and the frame shows their middle. Shots with a person matte are
+1080x1350 for feeds. Segments stay 16:9 and the frame shows their middle, unless the footage itself was
+made vertical: then set `SEG_SIZE = (1080, 1920)` in `look.py`, so segments keep the clips' own 9:16 frame
+instead of a 16:9 crop of it (sources of another shape are cropped to 9:16). Shots with a person matte are
 reframed on the person automatically; give other shots `pan=((x, 0), (x, 0))` to reframe (x is a texture
 offset; about ±0.34 reaches the edges in 9:16). Letterbox is skipped for non-wide output. Design `fx.py`
 graphics in 1080p units times `ov.s` and use `ov.fit` for text, and they hold at every size; check
@@ -75,6 +81,8 @@ All are documented in `edl.py`. Typical uses:
 - `expo=0.7-0.8` and a dim grade tame overexposed or blooming shots.
 - `rev=True` plays a shot backwards (smoke, explosions, water).
 - OVER track at `op=0.3-0.45`: one film over another.
+- `depth_fx="relight"`, `"contours"`, `"scan"` or `"haze"` with `depth_rate`, `depth_amt`, `depth_col`, and
+  `behind_depth=0.6` on shots with a depth map ("Depth").
 - Any other keyword is passed through to `fx.py` as `a["shot"]["name"]`, so a concept can add its own
   per-shot controls.
 
@@ -262,11 +270,65 @@ What fixed a slopcore video that failed it 151 times:
 percentile), for choosing a treatment per shot: dark type on a bright sky, a stronger shadow on a busy
 shot, a darker part of the frame.
 
+## Explaining graphics (devices.py)
+
+The engine's library of explaining graphics (references/effects-ideas.md, "What makes an effect land"):
+drawn, timed in beats and placed by the engine, filled and styled by the video. Start each line's graphic
+from a device and spend new code on the video's signature overlays; write a new device (below) only when
+no device fits the line.
+
+```python
+import devices as DV
+STYLE = DV.Style(accent=(255, 92, 64), dark=True, sans=..., bold=..., mono=..., mono_bold=..., display=...)
+PLAN = DV.Plan(STYLE)
+PLAN.add(DV.Counter("PEOPLE WHO CAN DO THIS", 8_000_000_000, mode="odometer"), DV.word("billion"),
+         4 * BEAT, prefer=0.3)
+```
+
+`Plan.add(device, t0, dur, prefer=0.3, xs=None)` shows it from t0 (a beat, or `DV.word("text", n)` for the
+n-th time a word is sung) for dur seconds; prefer is the centre line wanted as a fraction of the height,
+xs the left edges to try as fractions of the width. `Plan.draw(ov, img, t, avoid=rects)` draws what is on
+screen at t onto the front layer, clear of faces, of `avoid` (that frame's lyric blocks) and of each other,
+and returns the rects it took. Lay it out with the video's own blocks: in the layout pass, call
+`PLAN.draw` on a scratch image at every time in `PLAN.starts()`, in order with the other blocks
+(`examples/fx_examples.py`, example 6).
+
+| Device | Role | Explains | Main parameters |
+|---|---|---|---|
+| `Counter` | hero | a number: stakes, scale, money, time | label, value, start, fmt, unit, sub, beats, mode "count" or "odometer" |
+| `Gauge` | hero | a feeling or risk measured | label, value, lo, hi, unit, ticks, zone |
+| `Chart` | hero | the trend a line implies | label, points, kind "line"/"area"/"bars", xlabels, mark, note, per (beats a point) |
+| `Poll` | hero | opinion, odds; a callback that moves | title, options [(label, pct)], later [(time, [pcts])], votes |
+| `Progress` | hero | loading, copying, a countdown to something | label, done, start, end, beats |
+| `Terminal` | hero | the tool, the code, the agent | title, lines [("cmd"/"out", text[, beat])], prompt, cps |
+| `Chat` | hero | dialogue, a prompt and its reply | messages [("in"/"out", text)], title |
+| `Spec` | hero | a model card, product tag, garment label | kicker, title, rows [(field, value)], barcode |
+| `Flap` | hero | departures, countdowns, a verdict | rows, cols, label |
+| `Stamp` | hero | a verdict slammed on the beat | text, angle, color, sub |
+| `Strike` | hero | before and after, a price drop, a downgrade | label, old, new, under |
+| `Redact` | hero | a secret; a reveal later | label, lines with [hidden] words, lift (time) |
+| `Typed` | micro | sources, dates, coordinates, a footnote | rows (up to 3) |
+| `Tags` | cv | a classifier's verdict on the people in frame | label(i, box) -> text or None |
+| `Callout` | cv | a named thing in frame (locked shots) | xy (0..1), text, rows |
+
+The budget per frame is one hero, two cv marks and two micro rows; when more are on, the newest wins.
+Every device animates in beats from its start (`timing.beat_at`) and rises in and fades out; give each at
+least about 1.5 s (Plan warns under 1.2 s). Panels are dark glass with a lighter rim (or light paper with
+`dark=False`), which `contrastcheck.py` accepts on any shot. `Tags` draws a box round a lone head and, in
+a group, a chip with a leader line above each head, so nothing lands inside a head box even where the
+detector merged two heads; `Callout` drops its leader where it would cross a face.
+
+A new device subclasses `Device`: set `role`, `W`, `H` (1080p units) and write `tile(ov, st, t, t0, t1)`
+returning an RGBA image of that size (`_panel` draws the shared panel and header), or, for marks
+anchored to the frame, `draw_frame(ov, st, img, t, t0, t1, avoid)`. Keep it in the video's `fx.py`; a
+device that more than one video would use belongs in the engine.
+
 ## Shaders and uniforms (fx.py)
 
 - `UNIFORMS = {"name": default}` declares extra uniforms (float or 2/3/4-tuples) in both shader passes.
 - `GLSL_COMP` defines `vec3 fxComp(vec3 col, vec2 uv, float matte)`, applied to the composited picture
-  before echo/trail feedback and overlays; `matte` is the person matte. Matte tricks (a glow or outline
+  before echo/trail feedback and overlays; `matte` is the person matte, and the global `DEPTH` (0 far to
+  1 near) holds the depth on shots with a depth map (0 elsewhere). Matte tricks (a glow or outline
   around the person, light behind them), short accents on hits and, for visualizers, generated
   backgrounds go here. In a music video the footage stays graded footage: picture-wide stylization runs
   for a beat or two at most (SKILL.md Phase 3).
@@ -283,6 +345,32 @@ a one-beat aberration accent on drops, a rim glow on the person on kicks, embers
 Render stills at 3-6 telling times and look at the sheet before a full render. The end card is part of
 `fx.py` too: artist and title as the brief gave them, and a credit for every source whose license asks
 for one.
+
+## Depth (make_depth.py)
+
+`.venv/bin/python mv/scripts/make_depth.py mv/clips/W1.mp4 ...` writes `<CODE>_depth.mp4` next to each
+clip: Depth Anything V2 Small (Apache-2.0, about 99 MB, fetched once by `models.py` with a pinned
+checksum), on CPU through the onnxruntime that rembg installs, about 7 s per second of footage. Depth is
+relative, normalized per clip and smoothed over time. Archive shots get it per segment with `depth=True`.
+Make maps only for the shots that use them.
+
+Per shot in `edl.py`:
+- `depth_fx="relight"`: a band of light travels from near to far once per cycle. Energy on wides and
+  crowds; warm or white `depth_col`.
+- `depth_fx="contours"`: iso-depth lines, the nearest first, one more level each eighth. Turns a place
+  into a map; good on aerials and architecture.
+- `depth_fx="scan"`: a sweep crosses the frame once per cycle and leaves a point cloud tinted by depth.
+  Surveillance, analysis, "the machine sees it".
+- `depth_fx="haze"`: air by depth, lifting a little on the kick. Calm sections, golden hour.
+- `depth_rate` beats per cycle (default 1, from the shot's cut), `depth_amt` strength (defaults 0.85,
+  0.9, 0.8, 0.45), `depth_col` an RGB colour 0..1.
+- `behind_depth=0.6`: the `behind` layer tucks behind anything nearer than 0.6 (a tower, a rope, a
+  crowd), not only the person matte. Place the block so an edge tucks; a word that mostly disappears
+  doesn't read.
+
+A treatment is the footage's medium, chosen from the story (references/effects-ideas.md): rotate them,
+never the same one on neighbouring shots, and leave most shots untreated, so each one lands. `fx.py`
+can override `dTreat`, `dPhase`, `dAmt`, `dCol` and `dBehind` from `uniforms()` per frame.
 
 ## Audio data
 

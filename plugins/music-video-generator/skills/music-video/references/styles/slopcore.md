@@ -77,7 +77,7 @@ video to video"), never from leaving parts out.
    generated, watch time, a price, a risk percentage). The number is the video's spine: it counts toward
    the end and the video lands on it. A countdown that is the title (a battery draining from 100% to 1%
    by the last chorus, where it reads CHARGING), the song's position in a unit the story uses (miles from
-   shore, tokens left), or a count at a real rate since the first frame (emails sent worldwide since this
+   shore, songs left in the queue), or a count at a real rate since the first frame (emails sent worldwide since this
    song began).
 7. **Big numbers as punchlines.** A count, a price, a date, a percentage or a time slammed into the frame
    on the line that names it.
@@ -100,8 +100,10 @@ video to video"), never from leaving parts out.
 12. **The end recaps the show.** The ending looks back at the video: the running order of every chapter
    with its time, a map of where each one happened, or an iris closing on the shot the video opened on.
 13. **Effects of its own.** Invented for this video with `references/effects-ideas.md`, "What makes an
-   effect land": one punctuation move for the big hits, 4-6 effects that make a line physical, at least
-   one depth trick with the person matte, and a texture from the format's medium. Every effect holds long
+   effect land": an explaining graphic on every line (mostly devices from the engine's library, filled
+   with the line's facts and set in the video's type and accent), one punctuation move for the big hits,
+   4-6 effects that make a line physical, at least one depth trick with the person matte or the depth
+   map, and depth treatments rotated over the wides as the format's medium. Every effect holds long
    enough to read, and the footage stays under all of it. Each goes in the line table next to its line.
 
 ### Density
@@ -119,9 +121,10 @@ breaks and post-choruses. The references average 1.2-3.6 s a shot and Slopcore E
 the skill's dance-track default. Set `PACE_BEATS` in `edl.py` from those numbers and the song's tempo (at
 144 BPM, 1.5-2.7 s is about 3.5-6.5 beats).
 
-## Devices
+## Moves
 
-Not part of every video. Each concept picks three or four that fit its format and lyric.
+Not part of every video. Each concept picks three or four that fit its format and lyric. (These are
+story moves; the explaining graphics come from the engine's device library, item 13.)
 
 - **Text in the world.** A line written on something in the shot: a departure board, a neon sign with
   one letter out that changes the word, a cake with the line piped on it, a protest sign in a crowd, a
@@ -183,7 +186,7 @@ glowing x-ray double, the hypnosis spiral, sound drawn as lines across the water
 CMYK halftone arc, the title decoding out of random characters, the outlined echo stack of one word, and
 a word arriving in a filled accent block. Also leave their generated faces of real public figures inside
 fake posts: many video and image providers refuse real faces, and a fake post with a real face spreads as
-a fabricated record once it is clipped out of the video. Quote them as text instead (Devices, "This
+a fabricated record once it is clipped out of the video. Quote them as text instead (Moves, "This
 month's news").
 
 ## How it changes the skill's defaults
@@ -194,14 +197,14 @@ month's news").
   brackets, tally lights, timecode and BPM readouts, captions joined by "·", spectrum bars, rings on
   kicks, thin tracked capitals over the intro, one big word behind the performer, letterboxed lyric
   cards and film-leader countdowns.
-- "No takeovers" gives way for the chapter inside an interface (Devices) and for the finish that names
+- "No takeovers" gives way for the chapter inside an interface (Moves) and for the finish that names
   itself across the last act. Footage stays on screen in both: no full-frame graphic without video.
 - "It reads as a music video, not a document" gives way to the format's own furniture: the house card,
   a running order, a map in the recap. Paper texture, serif labels and engraved borders as the look stay
   off.
 - Vision labels are gags on their line. Corner brackets as a frame around the picture stay off.
 - The three concepts in Phase 3 are three slopcore videos. Each has the whole treatment; they differ in
-  format, setting, story, accent, type, gag set, house card, the spine number, the devices, the
+  format, setting, story, accent, type, gag set, house card, the spine number, the moves, the
   effects and the signature overlay. The lyric is usually about AI, so the gags can be clever, but the
   picture still has to hit at the drop.
 
@@ -232,8 +235,8 @@ In the order that worked:
    `align_lyrics.py`). Every popping word sits on these times. Type timed from the full mix lands up to a
    third of a second off and reads as sloppy.
 2. **A line table with the concept** (Phase 3), before any footage: per line its start, whether it is
-   sung, spoken or an aside, its picture and prop, its key words, its gag, its effect; per chapter its
-   format label, its house card and the spine number's value. It is the shot list for the generation
+   sung, spoken or an aside, its picture and prop, its key words, its gag, its explaining graphic and
+   effect; per chapter its format label, its house card and the spine number's value. It is the shot list for the generation
    prompts (Phase 4), the base of the chapter table (Phase 5) and the cue sheet for `fx.py`.
 3. **`fx.py` from `mv/data/lyrics.json`.** A set of key words for the accent; sets of line indices for
    spoken lines (bubbles) and aside lines (the italic face); then one drawing function each for the word
