@@ -84,7 +84,7 @@ same shape, in `~/.claude/music-video/styles/`.
 
 | Style | File | The user asks for |
 |---|---|---|
-| Slopcore: the AI-made pop video that knows it is AI-made; lip sync on every sung line, big words on the sung words, an interface gag per line, fine print at the edges | `references/styles/slopcore.md` | "slopcore", or a video like Astra Blue's "I'm A.S.I." or "P DOOM" |
+| Slopcore: the AI-made pop video that knows it is AI-made; lip sync on every sung line, big words on the sung words, an interface gag per line, fine print at the edges | `references/styles/slopcore.md` | "slopcore", or a video like Astra Blue's "I'm A.S.I." or "P DOOM", or anabology's "The Clodyssey" |
 
 When the user names a style, read its file before Phase 0 and apply all of it. It sets the Phase 0
 defaults, names the skill defaults it turns off (for slopcore, "text is sparse" and part of the habits
