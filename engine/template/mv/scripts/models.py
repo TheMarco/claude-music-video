@@ -1,4 +1,4 @@
-"""Model files for lyrics transcription and person mattes, downloaded anonymously.
+"""Model files for lyrics transcription, person mattes and depth maps, downloaded anonymously.
 
 Fetches the public model files with Python's standard HTTP client (plain GET requests, no extra
 headers) instead of the libraries' own downloaders, and checks every file against a pinned SHA-256.
@@ -7,6 +7,8 @@ headers) instead of the libraries' own downloaders, and checks every file agains
                        ~/.cache/music-video/models/ and shared by all projects
     human_seg_path()   rembg's u2net_human_seg.onnx (about 176 MB) from github.com, put where rembg
                        looks for it first, so rembg loads it and never runs its own downloader
+    depth_path()       Depth Anything V2 Small as ONNX (about 99 MB, Apache-2.0) from huggingface.co,
+                       for make_depth.py; runs on CPU with the onnxruntime that rembg installs
 """
 import hashlib
 import urllib.request
@@ -23,6 +25,10 @@ WHISPER_FILES = {
 
 HUMAN_SEG_URL = "https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net_human_seg.onnx"
 HUMAN_SEG_SHA256 = "01eb6a29a5c4d8edb30b56adad9bb3a2a0535338e480724a213e0acfd2d1c73c"
+
+DEPTH_REPO = "onnx-community/depth-anything-v2-small"
+DEPTH_REV = "4472b7362082ad9968fee890ca0f1e5aca36b93d"
+DEPTH_SHA256 = "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c"
 
 
 def fetch(url, out, sha256):
@@ -61,6 +67,13 @@ def human_seg_path():
     return old if old.exists() and not out.exists() else fetch(HUMAN_SEG_URL, out, HUMAN_SEG_SHA256)
 
 
+def depth_path():
+    """Depth Anything V2 Small (onnx/model.onnx), shared by all projects; make_depth.py loads it."""
+    out = CACHE / DEPTH_REPO.replace("/", "--") / DEPTH_REV / "model.onnx"
+    return fetch(f"https://huggingface.co/{DEPTH_REPO}/resolve/{DEPTH_REV}/onnx/model.onnx", out, DEPTH_SHA256)
+
+
 if __name__ == "__main__":
     print(whisper_dir())
     print(human_seg_path())
+    print(depth_path())

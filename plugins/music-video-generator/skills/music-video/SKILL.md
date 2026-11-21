@@ -30,7 +30,7 @@ user installs them once per engine version into `~/.claude/music-video/engine/<c
 
 ```bash
 SKILL="<base directory>"
-ENGINE_REV=fbd5bf83702de3987889953c9b14c9f0921904ff
+ENGINE_REV=ade71698060a6e0c6cd829e567231df5be5e4dca
 ENGINE="$HOME/.claude/music-video/engine/$ENGINE_REV"
 ```
 
@@ -38,7 +38,7 @@ Shell variables don't carry over from one command to the next. Start every comma
 `$ENGINE` or `$ENGINE_REV` with these three lines.
 
 **Check for the engine before anything else:** `test -f "$ENGINE/template/mv/scripts/render.py"`. When
-it is missing, stop. Tell the user this skill needs engine version `fbd5bf8`, give them
+it is missing, stop. Tell the user this skill needs engine version `ade7169`, give them
 https://github.com/TheMarco/claude-music-video#install-the-engine, and wait for them to say it is
 installed. They run those steps themselves: don't download or install the engine for them, and don't
 fall back to an older engine folder that happens to be there. Then check again and go on. The template in it (`$ENGINE/template/mv/scripts/`) is a working pipeline. Copy it
@@ -53,7 +53,7 @@ into each new project. Three files belong to the video and get written for it: `
   mv/scripts/                        copied template; edl.py, look.py, fx.py written per video;
                                      ENGINE_REV, the engine commit the copy came from
   mv/data/   song.json, lyrics.json, audio_feats.npz, codes.json, crops.json, edl.json, budget.json
-  mv/clips/  <CODE>.mp4 AI clips (+ <CODE>_matte.mp4)    mv/keyframes/ generated stills
+  mv/clips/  <CODE>.mp4 AI clips (+ _matte, _depth.mp4)  mv/keyframes/ generated stills
   mv/archive/<identifier>/ archive films                 mv/work/ segments, stills, sheets
   mv/review/ copies for the user to check                mv/out/ renders
 ```
@@ -84,7 +84,7 @@ same shape, in `~/.claude/music-video/styles/`.
 
 | Style | File | The user asks for |
 |---|---|---|
-| Slopcore: the AI-made pop video that knows it is AI-made; lip sync on every sung line, big words on the sung words, an interface gag per line, fine print at the edges | `references/styles/slopcore.md` | "slopcore", or a video like Astra Blue's "I'm A.S.I." or "P DOOM" |
+| Slopcore: the AI-made pop video that knows it is AI-made; lip sync on every sung line, big words on the sung words, an interface gag per line, fine print at the edges | `references/styles/slopcore.md` | "slopcore", or a video like Astra Blue's "I'm A.S.I." or "P DOOM", or anabology's "The Clodyssey" |
 
 When the user names a style, read its file before Phase 0 and apply all of it. It sets the Phase 0
 defaults, names the skill defaults it turns off (for slopcore, "text is sparse" and part of the habits
@@ -214,11 +214,11 @@ python3 -m venv .venv
 If the first line fails, build the venv with a Python in that range (`python3.12 -m venv .venv`). On
 Windows the venv's Python is `.venv\Scripts\python`. Lyrics transcription uses mlx-whisper on Apple
 Silicon (installed by the requirements); elsewhere `pip install openai-whisper`. `models.py` downloads
-the Whisper and person-matte models on first use with plain anonymous requests and pinned checksums;
-keep model downloads in `models.py` rather than the libraries' own downloaders. Fonts are picked per
-video in `fx.py`; `F` and `FS` in `overlay.py` point at the macOS system font folders, and on other
-systems any `.ttf` or `.otf` path works (`references/compositor.md`, "Fonts"). Run every script from
-the project root.
+the Whisper, person-matte and depth models on first use with plain anonymous requests and pinned
+checksums; keep model downloads in `models.py` rather than the libraries' own downloaders. Fonts are
+picked per video in `fx.py`; `F` and `FS` in `overlay.py` point at the macOS system font folders, and on
+other systems any `.ttf` or `.otf` path works (`references/compositor.md`, "Fonts"). Run every script
+from the project root.
 
 ### Updating a project's engine
 
@@ -233,7 +233,9 @@ never trails the sound"), or its beat-timed accents land a frame after the cuts.
 engine fbd5bf8 gets `heads.py`, `facecheck.py` and `contrastcheck.py` with the update, but its `fx.py`
 still places and draws blocks its own way: run all three, move any block `facecheck.py` lists onto
 `ov.place`, and outline the type `contrastcheck.py` lists. Render stills at 4-6
-moments with both and compare before changing anything else.
+moments with both and compare before changing anything else. A project from before engine ade7169 gains
+`devices.py` and `make_depth.py` and needs no change to keep rendering as before; one that patched
+`render.py` and `media.py` for vertical footage sets `SEG_SIZE` in its `look.py` instead.
 
 ## Phase 2: the song
 
@@ -336,9 +338,11 @@ lines returns unless the user asks.
 4. **Write three concepts**, three different identities inside the same brief. For each: one or two
    sentences on what a viewer sees and feels at the drop (light, color, what fills the frame, what
    moves); the look (palette, finish start); title and credits; type, or none; 3-6 signature overlays,
-   at least half new code, building toward the drop or last chorus; the edit's devices; the story in
-   one line per chapter. Each overlay says how much of the frame it covers and when: most of the time
-   the footage is what you see.
+   at least half new code, building toward the drop or last chorus; the explaining layer (one graphic
+   per line from the questions in `references/effects-ideas.md`, "One explaining graphic per line", most
+   of them devices from the engine's library, and the one graphic that escalates across the video); the
+   edit's devices; the story in one line per chapter. Each overlay says how much of the frame it covers
+   and when: most of the time the footage is what you see.
    Sensation over conceit: a concept whose appeal is a clever mapping that needs explaining (the verses
    as chess moves, the song as a lecture) is a design idea, not a video idea. Drop it.
 5. **Test each concept** against the craft list above and the habits below; replace any that fails.
@@ -351,7 +355,8 @@ lines returns unless the user asks.
      joined by "·", timecode and BPM readouts
    - spectrum analyzer bars, oscilloscope traces, rings rippling from the center on kicks, symbols
      popping on snares
-   - meters, counters and readouts climbing into the drop
+   - meters, counters and readouts climbing into the drop as decoration (a counter that shows a line's
+     own number is that line's explaining graphic, not this habit)
    - thin, widely tracked capitals for the artist and title, centered over the intro
    - one big word behind the performer in a heavy grotesk (Futura, Impact)
    - letterboxed intro and breakdown with lyric cards decoding in the bar
@@ -362,7 +367,10 @@ lines returns unless the user asks.
    and stay available to every video.
 
 Once the user has chosen, write the concept into `mv/NOTES.md`: it steers the footage (Phase 4) and the
-edit (Phase 5), and it is built in Phase 6.
+edit (Phase 5), and it is built in Phase 6. Include a line table: each line's time, its explaining graphic
+(the device and the facts it shows) and any depth treatment on its shot, so the footage prompts carry what
+the graphics need (the object to label, an empty side for a panel, a wide with depth for a treatment).
+In an instrumental the rows are the written script or the sections.
 
 ## Phase 4: footage
 
@@ -395,7 +403,8 @@ resolutions, audio, price), getting local reference photos to the provider, down
   shot for it rather than graded into it afterwards.
 - Save clips as `mv/clips/<CODE>.mp4` with short codes (P1-P6 for one performer, Q1-Q6 for another):
   `python3 -I mv/scripts/fetch_clip.py mv/clips/P1.mp4 URL`. Then make mattes: `.venv/bin/python mv/scripts/make_matte.py mv/clips/*.mp4` (skip files already
-  ending in `_matte`).
+  ending in `_matte`), and depth maps for the clips whose shots get a depth treatment or `behind_depth`:
+  `.venv/bin/python mv/scripts/make_depth.py mv/clips/W1.mp4 ...` (about 7 s per second of footage).
 - **Check every clip's frame rate as it arrives**, before mattes, sync measurement and the edit:
   `.venv/bin/python mv/scripts/conform.py mv/clips/*.mp4`. Some generators write 24 fps takes on a
   60 fps clock with uneven gaps between frames; read as stated, those clips get frames duplicated or
@@ -486,7 +495,9 @@ dissolves in old films carry a ghost of the next shot for a second or more.
 
 **Build the concept.** `look.py`: the `FINISH` (from a start), on top of the palettes and grades written
 for the edit. `fx.py`: overlays
-(`draw_front`, `draw_behind`), shaders (`GLSL_COMP` with the person matte, `GLSL_FINAL`) for matte
+(`draw_front`, `draw_behind`), the explaining graphics from the line table through a `devices.Plan`,
+the depth treatments as `depth_fx` on their shots in `edl.py`, shaders (`GLSL_COMP` with the person
+matte and `DEPTH`, `GLSL_FINAL`) for matte
 tricks, light and accents, and per-frame uniforms from the audio and song position (they can also drive
 any engine value). The engine draws nothing by itself and stays untouched.
 `$ENGINE/examples/fx_examples.py` shows the mechanics; it is not a kit. `references/compositor.md`

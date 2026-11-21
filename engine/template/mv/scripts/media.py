@@ -52,6 +52,17 @@ def matte_path(code):
     return ROOT / "clips" / f"{code}_matte.mp4"
 
 
+def depth_path(code):
+    return ROOT / "clips" / f"{code}_depth.mp4"
+
+
+def seg_size():
+    """Segment size (w, h): look.SEG_SIZE when a project sets it (1080x1920 for footage made vertical),
+    else 1280x720, the 16:9 the engine always used."""
+    import look
+    return tuple(getattr(look, "SEG_SIZE", (1280, 720)))
+
+
 @lru_cache(maxsize=None)
 def probe(code):
     """(duration_s, width, height) of a source."""
@@ -100,10 +111,11 @@ def picture_area(code):
 
 
 def crop_for(code):
-    """Crop rectangle (x, y, w, h) in 0..1 that turns the source into a clean 16:9 frame.
+    """Crop rectangle (x, y, w, h) in 0..1 that turns the source into a clean frame of the segment aspect
+    (16:9 unless look.SEG_SIZE says otherwise).
 
     Archive films: black bars are detected and removed first, then the picture is center-cropped
-    to 16:9. mv/data/crops.json overrides it per code (burned-in intros, a wobbly gate, a reframe),
+    to the segment aspect. mv/data/crops.json overrides it per code (burned-in intros, a wobbly gate, a reframe),
     after checking a contact sheet.
     """
     if code in CROPS:
@@ -113,9 +125,10 @@ def crop_for(code):
     _, w, h = probe(code)
     ax, ay, aw, ah = (0.0, 0.0, 1.0, 1.0) if is_image(code) else picture_area(code)
     a = (aw * w) / (ah * h)
-    target = 16 / 9
+    sw, sh = seg_size()
+    target = sw / sh
     if a < target:                       # 4:3 and similar: keep full width, crop top and bottom
         hh = ah * a / target
         return (ax, ay + (ah - hh) / 2, aw, hh)
-    ww = aw * target / a                 # wider than 16:9: crop the sides
+    ww = aw * target / a                 # wider than the target: crop the sides
     return (ax + (aw - ww) / 2, ay, ww, ah)

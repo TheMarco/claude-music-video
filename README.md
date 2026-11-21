@@ -47,10 +47,10 @@ section). The skill copies them into each project from there.
 
 The skill is pinned to one engine commit (`ENGINE_REV` in `SKILL.md`) and looks for it in
 `~/.claude/music-video/engine/<commit>/`. When it isn't there, the skill stops and sends you here. The
-current version is `fbd5bf8`:
+current version is `ade7169`:
 
 ```
-ENGINE_REV=fbd5bf83702de3987889953c9b14c9f0921904ff
+ENGINE_REV=ade71698060a6e0c6cd829e567231df5be5e4dca
 DEST="$HOME/.claude/music-video/engine/$ENGINE_REV"
 mkdir -p "$DEST" &&
 curl -fsSL "https://codeload.github.com/TheMarco/claude-music-video/tar.gz/$ENGINE_REV" |
@@ -63,9 +63,9 @@ every file is plain Python you can read first. With git instead:
 
 ```
 git clone https://github.com/TheMarco/claude-music-video.git && cd claude-music-video
-git checkout fbd5bf83702de3987889953c9b14c9f0921904ff
-mkdir -p ~/.claude/music-video/engine/fbd5bf83702de3987889953c9b14c9f0921904ff
-cp -R engine/. ~/.claude/music-video/engine/fbd5bf83702de3987889953c9b14c9f0921904ff/
+git checkout ade71698060a6e0c6cd829e567231df5be5e4dca
+mkdir -p ~/.claude/music-video/engine/ade71698060a6e0c6cd829e567231df5be5e4dca
+cp -R engine/. ~/.claude/music-video/engine/ade71698060a6e0c6cd829e567231df5be5e4dca/
 ```
 
 After an update of the plugin the skill may ask for a newer engine: run the same steps with the commit
@@ -99,10 +99,10 @@ Every request the scripts make is anonymous. Network access:
 - your video-generation MCP, only through its own tools: prompts, and the reference photos you choose
   to send it; finished clips are downloaded from the URLs it returns (`fetch_clip.py`)
 - Python packages from PyPI during setup
-- the lyrics and background-removal models on first use, downloaded anonymously and checked against
-  pinned checksums (`models.py`): Whisper large-v3-turbo from huggingface.co into
-  `~/.cache/music-video/models/`, and rembg's person model from github.com into rembg's own model
-  folder. Off Apple Silicon, openai-whisper fetches its model from OpenAI's public download server.
+- the lyrics, background-removal and depth models on first use, downloaded anonymously and checked
+  against pinned checksums (`models.py`): Whisper large-v3-turbo and Depth Anything V2 Small (Apache-2.0,
+  for the depth treatments) from huggingface.co into `~/.cache/music-video/models/`, and rembg's person
+  model from github.com into rembg's own model folder. Off Apple Silicon, openai-whisper fetches its model from OpenAI's public download server.
 - optionally, for lip-sync and word-timed type: Demucs (vocal separation), installed from PyPI when
   you agree to it; it pulls in PyTorch and downloads its own model on first run
 

@@ -59,3 +59,7 @@ STARTS = {
     "none": dict(),
 }
 FINISH = {**OFF, **STARTS["film"]}   # pick the start from the brief, then tune any value here
+
+# Segment size. Leave it unset for 16:9 footage (segments are 1280x720 and a vertical render shows their
+# middle). For footage made vertical, set SEG_SIZE = (1080, 1920) so segments keep the clips' own frame.
+# SEG_SIZE = (1080, 1920)

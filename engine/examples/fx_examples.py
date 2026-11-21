@@ -7,11 +7,16 @@ footage as footage: three are overlays, one is a one-beat accent.
 3. Rim glow: the person's edge lights up warm on each kick (uses the person matte, composite pass).
 4. Embers: sparks rising from the bottom edge, lit by the hi-hats (overlay, front layer).
 5. Captions placed clear of every face for their whole time on screen (ov.place, front layer).
+6. Explaining graphics from the device library (devices.py): a counter and a chart, laid out with the
+   captions and drawn under the frame budget. A real video picks one per line, filled with the line's facts.
+Depth treatments need no fx.py code: make_depth.py on a clip, then depth_fx="relight" (or "contours",
+"scan", "haze") on its shots in edl.py; GLSL_COMP can read DEPTH (0 far .. 1 near) on those shots.
 """
 import math
 
 from PIL import ImageDraw  # noqa: F401  (handy for draw_* hooks)
 
+import devices as DV
 from overlay import FS
 from timing import BEAT, DROPS, HIT_LEAD
 
@@ -58,6 +63,11 @@ CAPTIONS = [(4.0, 7.5, "every block keeps clear of faces"), (8.0, 11.5, "and of 
 CAPTION_FONT = (FS + "Arial Bold.ttf", 0)
 _laid = False
 
+# 6. explaining graphics: one per line, each for at least ~1.5 s, timed in beats from its start
+PLAN = DV.Plan(DV.Style(accent=(255, 140, 60)))
+PLAN.add(DV.Counter("FRAMES RENDERED", 576, fmt="{:,.0f}", sub="24 FPS · 24 S"), 12.0, 3.0, prefer=0.3)
+PLAN.add(DV.Chart("LOUDNESS BY BAR", [2, 3, 5, 8, 9, 7], kind="bars", mark="PEAK", per=0.5), 16.0, 3.5, prefer=0.3)
+
 
 def _caption(ov, d, t, i):
     t0, t1, text = CAPTIONS[i]
@@ -73,13 +83,17 @@ def _caption(ov, d, t, i):
 
 def draw_front(ov, d, t, f, ctx):
     global _laid
-    if not _laid:
+    if not _laid:   # one layout pass, every block in order of appearance: captions, then the devices
         _laid = True
         for i in sorted(range(len(CAPTIONS)), key=lambda i: CAPTIONS[i][0]):
             _caption(ov, None, CAPTIONS[i][0], i)
+        from PIL import Image
+        for t0 in PLAN.starts():
+            PLAN.draw(ov, Image.new("RGBA", (ov.w, ov.h)), t0)
     for i, (t0, t1, _) in enumerate(CAPTIONS):
         if t0 <= t < t1:
             _caption(ov, d, t, i)
+    PLAN.draw(ov, d._image, t)
     # 4. embers rising from the bottom, brightness from the hi-hats
     if ov.kick_level(t) < 0.3:
         return

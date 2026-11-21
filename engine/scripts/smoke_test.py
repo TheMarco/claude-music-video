@@ -12,7 +12,8 @@ double exposure), contact --edl, render --stills (once with the empty fx.py, onc
 examples/fx_examples.py), sheet, a full render, beatsheet, qc, heads, facecheck and contrastcheck (with
 the empty fx.py and with the examples), a vertical bar-locked part, and concept_dice. It checks that every step exits cleanly and writes what it should, that the analyzer
 finds the tempo, and that the render is as long as the song. It does not test lyrics transcription or
-person mattes (both download large models). --keep leaves the project in place for a look.
+person mattes or depth maps (all three download large models; the depth treatments still compile and run
+without a map). --keep leaves the project in place for a look.
 """
 import argparse
 import json
@@ -120,7 +121,7 @@ def main():
     need("mv/work/stills/sheet_0.jpg")
     empty_fx = (scripts / "fx.py").read_text()
     shutil.copy(ENGINE / "examples" / "fx_examples.py", scripts / "fx.py")
-    run(py, "mv/scripts/render.py", "mv/work/stills/x", "--stills", "10,16")
+    run(py, "mv/scripts/render.py", "mv/work/stills/x", "--stills", "10,13,17.5")
     need("mv/work/stills/x_*.jpg")
     (scripts / "fx.py").write_text(empty_fx)
 
@@ -140,8 +141,8 @@ def main():
     print(run(py, "mv/scripts/facecheck.py", "--size", "960x540"))
     print(run(py, "mv/scripts/contrastcheck.py", "--size", "960x540"))
     shutil.copy(ENGINE / "examples" / "fx_examples.py", scripts / "fx.py")   # placed, outlined captions pass both
-    print(run(py, "mv/scripts/facecheck.py", "--size", "960x540", "--start", "3", "--end", "12"))
-    print(run(py, "mv/scripts/contrastcheck.py", "--size", "960x540", "--start", "3", "--end", "12"))
+    print(run(py, "mv/scripts/facecheck.py", "--size", "960x540", "--start", "3", "--end", "20"))
+    print(run(py, "mv/scripts/contrastcheck.py", "--size", "960x540", "--start", "3", "--end", "20"))
     (scripts / "fx.py").write_text(empty_fx)
     run(py, "mv/scripts/render.py", "mv/out/smoke_hook.mp4", "--size", "1080x1920", "--start", "8", "--end", "16")
     need("mv/out/smoke_hook.mp4")
