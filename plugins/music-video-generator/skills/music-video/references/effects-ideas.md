@@ -45,12 +45,13 @@ reasons, never their effects; the examples below are illustrations, not a list t
   person (`draw_behind`) and in front of them (`draw_front`, clear of the face), the world dropping to
   black for a beat while the person stays lit, the world in one treatment and the person in another,
   light coming from behind them.
-- **One punctuation of its own.** One mark for the hits, one or two frames, the same every time and
-  invented from the concept: the picture collapsing to the person's silhouette in white on black, the
-  accent colour flooding the shadows, one frame slipped a quarter screen sideways like a film frame off
-  its sprockets. In the references the cuts follow the words (they land on the beat no more often than
-  chance would) and the punctuation follows the drum: their flash frames sit within two frames of the
-  beat.
+- **One punctuation of its own.** One move for the big hits (the drops, the finale), the same each time
+  and invented from the concept, held long enough to read: about a beat held and a beat of motion out of
+  it. The picture collapsing to the person's silhouette in white on black and opening back up, the
+  accent colour flooding the shadows and draining out. Never a one- or two-frame flash, whatever the
+  references do: in testing those read as render glitches, and a mark on every hit turns into noise.
+  The edit follows the words and the punctuation follows the drum (in the references the cuts land on
+  the beat no more often than chance would; their flashes sit within two frames of it).
 - **Attached to the picture.** Graphics that know where things are read as part of the shot: a label on
   a tracked head (`ov.heads`), a line drawn from the edge of the matte, a mark pinned to a fixed point in
   a locked shot. Those three are what the engine can follow; don't plan an effect that needs a tracker
@@ -59,11 +60,9 @@ reasons, never their effects; the examples below are illustrations, not a list t
   and springs to size, a word about doubt types, deletes and retypes, a word about heat arrives glowing
   and cools to the type's colour, a price falls digit by digit like an odometer run backwards. One
   family per video, a new move on the hook.
-- **Graphic shots.** A beat or two of pure graphic cut in like a shot, not laid over one: a full-frame
-  counter, a diagram of the line, one symbol. They rest the eye from faces and make the next shot hit.
-  Cut them into the EDL as `BLACK` shots and draw them in `fx.py` by time; when one replaces the start of
-  a shot, start the rest of that shot later in its source by the same amount so the head tracking still
-  matches, and end any type that would run over the graphic on its cut.
+- **Footage under everything.** A counter, a diagram or an inventory sits over the footage as a card or
+  as type, never as a full-frame graphic with no video: a graphic screen cut in as a shot was rejected
+  in testing.
 
 Write each effect down as its line or moment, what the viewer sees, the reason in a few words, its
 layer, and its timing (a hit, a hold, or an arc across the video). An effect without a reason goes.
@@ -74,7 +73,8 @@ Where each kind goes in the engine (`references/compositor.md`):
   the type: screens and textures, the world dropping out, the person tinted or filled. Type drawn in
   `fx.py` stays sharp above it.
 - `GLSL_FINAL` and the engine uniforms returned by `uniforms(t, a)` (`flash`, `invert`, `ca`, `punch`,
-  `fade`): the whole frame, type included. Punctuation frames go here.
+  `fade`): the whole frame, type included. Punctuation moves go here; a move that resamples the
+  composited picture (`tComp`) adds the bloom textures (`tB1`, `tB2`) back itself.
 - `draw_behind` and `draw_front`: shapes behind and in front of the person; everything in front goes
   through `ov.place` against the heads.
 - The EDL's `echo`, `trail` and `glitch` per shot: afterimages, smears and tears.
@@ -96,10 +96,10 @@ them, a halo behind them that swells with the voice, particles that pass behind 
 
 ## Accents (a beat or two, on drops and big hits)
 
-The only picture-wide effects, and only briefly: a flash frame, the color channels tearing apart, one
-beat in negative, a radial zoom blur, strobing exposure for the last bar into a drop, a freeze, a burn
-across the cut, two frames of block glitch, half a beat stuttered, a beat of black before the drop, a
-shake. Thermal, infrared, halftone, posterize or kaleidoscope can flash for a beat; as the look of a
+The only picture-wide effects, and only briefly, but each long enough to read (half a beat or more; a
+single flashed frame reads as a glitch): the color channels tearing apart, one beat in negative, a
+radial zoom blur, strobing exposure for the last bar into a drop, a freeze, a burn across the cut, half
+a beat of block glitch, half a beat stuttered, a beat of black before the drop, a shake. Thermal, infrared, halftone, posterize or kaleidoscope can flash for a beat; as the look of a
 section or the video they are takeovers.
 
 ## Color (inside the grade)

@@ -100,9 +100,9 @@ video to video"), never from leaving parts out.
 12. **The end recaps the show.** The ending looks back at the video: the running order of every chapter
    with its time, a map of where each one happened, or an iris closing on the shot the video opened on.
 13. **Effects of its own.** Invented for this video with `references/effects-ideas.md`, "What makes an
-   effect land": one punctuation frame for the hits, 4-6 effects that make a line physical, at least one
-   depth trick with the person matte, 2-4 graphic shots, and a texture from the format's medium. Each
-   goes in the line table next to its line.
+   effect land": one punctuation move for the big hits, 4-6 effects that make a line physical, at least
+   one depth trick with the person matte, and a texture from the format's medium. Every effect holds long
+   enough to read, and the footage stays under all of it. Each goes in the line table next to its line.
 
 ### Density
 
@@ -162,7 +162,7 @@ repeats an earlier slopcore video's identity lines in the history:
 - the big-word typeface, the aside typeface and the accent colour
 - the gag set, written from this lyric, and the house card
 - the fine-print wording and its running number, and what that number lands on
-- the effects: the punctuation frame, the line effects, the depth tricks and the texture
+- the effects: the punctuation move, the line effects, the depth tricks and the texture
 - one signature overlay of the video's own (Slopcore Encore: a marquee bulb sign behind the singer whose
   first word swaps with the lyric)
 - the title and the end card
@@ -194,8 +194,8 @@ month's news").
   brackets, tally lights, timecode and BPM readouts, captions joined by "·", spectrum bars, rings on
   kicks, thin tracked capitals over the intro, one big word behind the performer, letterboxed lyric
   cards and film-leader countdowns.
-- "No takeovers" gives way for the chapter inside an interface (Devices), for graphic shots of a beat
-  or two, and for the finish that names itself across the last act.
+- "No takeovers" gives way for the chapter inside an interface (Devices) and for the finish that names
+  itself across the last act. Footage stays on screen in both: no full-frame graphic without video.
 - "It reads as a music video, not a document" gives way to the format's own furniture: the house card,
   a running order, a map in the recap. Paper texture, serif labels and engraved borders as the look stay
   off.
