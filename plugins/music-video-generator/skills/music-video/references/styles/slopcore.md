@@ -45,12 +45,13 @@ video to video"), never from leaving parts out.
    scoring paddles on a probability, a hand on a phone on a notification. Cut between the face, hands
    with the prop, and wides with a crowd or a city.
 3. **The sung words, big.** Heavy condensed capitals in stacks of one to six rows, each word popping in
-   at its sung time, set in the empty side of the frame rather than over the face, alternating sides from
-   line to line. The key word or two of each line in the accent colour. A second, lighter typeface (an
+   at its sung time, set in the empty side of the frame and never over a face (the singer's from any
+   angle, the back of the head included, or anyone else's), alternating sides from line to line. The key word or two of each line in the accent colour. A second, lighter typeface (an
    italic serif) for asides, whispers and the bridge. On the hook or a punchline, one word fills the
    frame.
 4. **The caption.** The whole line small at the bottom left, each word lighting up as it is sung, the key
-   word in the accent. On for every sung line, under the big words.
+   word in the accent. On for every sung line, under the big words, and clear of faces like everything
+   else.
 5. **Interface gags.** One drawn interface element per line or every other line, real enough to read in a
    second: a permission dialog ("Allow ... to run the world?" with Don't Allow / Allow), a pay button
    with a cursor on it, a poll or slider, a dating card, a notification, a typing indicator, a
@@ -152,8 +153,16 @@ In the order that worked:
    signature overlay. Words pop in at their time with a short overshoot (about 20% larger for 0.1 s) and
    leave with their line; a soft drop shadow keeps them legible on bright shots. Place everything as
    fractions of `ov.w` and `ov.h` and fit sizes to width with `ov.fit`, so the layout survives a vertical
-   cut.
+   cut, and every block through `ov.place` against the tracked heads (`references/compositor.md`,
+   "Keeping faces clear"). Slopcore puts a block on most frames and the singer on most shots, so a
+   position picked for a line's first frame lands on the singer's head later in the line: after a cut,
+   when they turn, or when they dance into it. That happened to a price card on a back view and a CAPTCHA on a
+   dancer in one first cut.
 4. **Count the density before the full render.** Stills every 4 s across the song (`.venv/bin/python
    mv/scripts/render.py mv/work/stills/d --stills 2,6,10,...`, then `sheet.py`), checked against
    "Density" above. Fewer big elements than two frames in three means more gags or more words before
    rendering.
+5. **Faces clear, checked.** `heads.py` after the edit is final, every head sheet looked at and
+   corrected, then `facecheck.py` at the output size, which has to pass before anything is shown. In an
+   extreme close-up there is often no room: give that shot no type, or end the line before the face
+   fills the frame.

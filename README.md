@@ -23,7 +23,10 @@ It runs in Claude Code on your own computer. In claude.ai chat or Cowork the ski
 render, since those have no local Python, ffmpeg or GPU.
 
 Developed and tested on macOS with Apple Silicon. Linux and Windows have fallbacks for fonts, lyrics
-transcription and headless OpenGL, but are untested.
+transcription and headless OpenGL, but are untested. Head tracking (which keeps every overlay off every
+face) uses Apple's Vision framework on macOS, through a small Swift helper compiled with `swiftc` from
+the Xcode command line tools; elsewhere it falls back to OpenCV face detection, which misses heads seen
+from behind, so the review sheets need a closer look there.
 
 ## Install
 

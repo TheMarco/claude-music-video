@@ -9,6 +9,7 @@
 - The look (look.py)
 - Film grain
 - Graphics and text (fx.py drawing)
+- Keeping faces clear
 - Shaders and uniforms (fx.py)
 - Audio data
 - Lyrics
@@ -177,6 +178,57 @@ with `ov.layer` for gradients and textures inside letters; a blurred dark copy b
 bright shots; gate overlays with `ov.kick_level(t)` so calm sections stay clean; keep letterbox-bar text
 inside the bar spans from `look.py`.
 
+## Keeping faces clear
+
+Nothing drawn in front sits on a face, at any frame it is on screen (SKILL.md, working rules). The engine
+tracks the heads and places the blocks; `fx.py` uses that for every block it draws.
+
+**Tracking.** `heads.py` renders the edit with no overlays (`render.py --clean`), finds faces and heads on
+every frame of that render and writes `mv/data/heads.json`: per frame, boxes from the hair to the chin, in
+0..1 of the frame. Because it reads the rendered picture, the boxes follow every crop, zoom, pan, speed
+change and reverse as they play. On macOS it uses Apple's Vision framework, faces plus body pose, so a
+head turned away or seen from behind still gets a box; elsewhere OpenCV's Haar cascades, which find
+frontal and profile faces only. A box is held for four frames either side inside its shot and never
+crosses a cut, and the cut is the frame the renderer cuts on (`on_frame` of the shot's start), not the
+EDL time; otherwise the first frame of every shot inherits the last shot's heads.
+
+The detector misses heads and invents others, and the review sheets (`mv/review/heads_NN.jpg`, every
+shot every 0.25 s with a 0.1 grid) are where both show. Misses: heads seen from behind or from above, a
+figure small in a wide, a head half out of frame, motion blur, a face lit only by a rim light. Inventions:
+a chain, a statue, a reflection. Fix them in `mv/data/heads_manual.json` (`add`, `clear`, `drop`, in
+heads.py's docstring) and run `heads.py --rebuild`. Crowd faces count when the detector finds them
+(boxes from 3% of the frame height). An older face pass that ran Haar on the source clips with hand-set
+bands missed a back view and a small dancer and put cards on both heads.
+
+**Placing.** `ov.place(key, t0, t1, bw, bh, xs, prefer, t=t)` returns `(x, y, k)`: the left edge, the
+centre line and a scale for a block of `bw` by `bh` px shown from `t0` to `t1`. It first looks for one
+position clear of every head over the whole span inside the feed's safe band (10-80% of the height),
+trying each left edge in `xs` and moving out from `prefer` (a fraction of the height). Failing that it
+places the block shot by shot, so it moves on a cut, where the move doesn't show, and per shot it tries
+the wider band (5-94%) and then 85%, 72% and 60% of the size. A block with no spot left is listed in
+`ov.place_misses`. Heads get a margin of `HEAD_PAD` (3% of the width, 2.2% of the height) on top of
+their boxes.
+
+- Pass the full footprint: the text or card with its shadow, the pop-in overshoot, any slide-in, and
+  what grows out of the block (pasted copies, a credit block under the title).
+- Lay out in order of appearance. Placed blocks are remembered and later ones keep clear of them, so on
+  the first `draw_front` call run each draw function once at every block's start time, in time order,
+  drawing nothing; a render or a check that starts mid-song then lays out like the full render.
+  `examples/fx_examples.py` (example 5) has the pattern.
+- Draw at the position for the frame's own time (`t=t`): the position can change at a cut.
+- Lines of one sentence share one key and one span, so they keep one size and place.
+- A close-up whose face fills the frame may leave no room at any size. End the block before the face
+  grows, move it to the next shot or leave the shot clear; text under the chin is the last resort.
+- Guard before drawing: skip the block on a frame where `ov.touches_face(rect, t)` is true. With right
+  boxes it never fires.
+- Fine print, particles and anything else drawn per frame check `ov.heads(t)` too: an item that would
+  touch a head is left out of that frame.
+
+**Checking.** `facecheck.py --size <output size>` draws the overlay of every frame and lists the frames
+where overlay pixels (above 15% opacity) fall inside a head box, and the blocks that found no clear spot.
+It exits 1 when it lists anything, and a render that fails it is not shown to the user. It can only check
+heads that have boxes, so the sheets come first.
+
 ## Shaders and uniforms (fx.py)
 
 - `UNIFORMS = {"name": default}` declares extra uniforms (float or 2/3/4-tuples) in both shader passes.
@@ -242,3 +294,5 @@ Futura are the usual reflex; start elsewhere.
   keep other text inside the picture area.
 - Very bright archive frames plus bloom wash to white; lower `expo` on the shot instead of global bloom.
 - `fx.py` imports `overlay` helpers; `overlay.py` imports `fx` lazily for that reason. Keep it that way.
+- A block placed from its first frame alone lands on a face later in its span: after a cut, or when the
+  person moves or turns. Place it over the whole span (`ov.place`).
