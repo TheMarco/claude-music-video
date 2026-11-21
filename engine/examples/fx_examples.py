@@ -51,8 +51,9 @@ def uniforms(t, a):
     return out
 
 
-# 5. captions: (start, end, text). The footprint passed to ov.place includes the shadow and the pop-in
-# overshoot; the layout runs once, in order of appearance, before the first frame is drawn.
+# 5. captions: (start, end, text). The footprint passed to ov.place includes the outline and the pop-in
+# overshoot; the layout runs once, in order of appearance, before the first frame is drawn. The dark
+# outline keeps them readable on any shot (contrastcheck.py).
 CAPTIONS = [(4.0, 7.5, "every block keeps clear of faces"), (8.0, 11.5, "and of every block before it")]
 CAPTION_FONT = (FS + "Arial Bold.ttf", 0)
 _laid = False
@@ -65,7 +66,9 @@ def _caption(ov, d, t, i):
     x, y, k = ov.place(("caption", i), t0, t1, w, h, [0.08 * ov.w, 0.92 * ov.w - w], 0.75, t=t)
     if d is None or ov.touches_face((x, y - h * k / 2, x + w * k, y + h * k / 2), t):
         return   # d is None while laying out; the guard never fires when the head boxes are right
-    d.text((x, y), text, font=ov.font(CAPTION_FONT, fnt.size / ov.s * k), fill=(255, 255, 255, 235), anchor="lm")
+    f2 = ov.font(CAPTION_FONT, fnt.size / ov.s * k)
+    d.text((x, y), text, font=f2, fill=(255, 255, 255, 240), anchor="lm",
+           stroke_width=max(2, int(f2.size * 0.05)), stroke_fill=(10, 12, 18, 240))
 
 
 def draw_front(ov, d, t, f, ctx):

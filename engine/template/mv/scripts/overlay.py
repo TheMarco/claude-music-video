@@ -26,6 +26,9 @@ Faces (mv/data/heads.json from heads.py; without it these see no faces and say s
                                                   per shot (it moves on the cut), a wider band and smaller
                                                   sizes before giving up. Cached per key; misses land in
                                                   ov.place_misses, which facecheck.py reports.
+  ov.backdrop(rect, t)                            the bare picture under rect at t (heads.py's clean
+                                                  frames): {"mean", "low", "high"} relative luminance
+                                                  (mean, 10th, 90th percentile), or None without them
 Module helpers: hash01(*key) for stable per-frame randomness, keyframes(t, [(t, v), ...]), and F / FS,
 the macOS system font folders.
 """
@@ -280,6 +283,30 @@ class Overlay:
             if a <= tt < b:
                 return got
         return self._placed[key][-1][2]
+
+    def backdrop(self, rect, t):
+        """Luminance of the picture under rect (px) at frame time t, without overlays, from the clean frames
+        heads.py wrote: for choosing a block's treatment per shot (light or dark type, a stronger shadow)."""
+        n = int(round(t * FPS))
+        p = Path("mv/work/heads/frames") / f"{n:05d}.jpg"
+        if not hasattr(self, "_bd"):
+            self._bd = {}
+        if n not in self._bd:
+            if not p.exists():
+                return None
+            if len(self._bd) > 8:
+                self._bd.clear()
+            c = np.asarray(Image.open(p).convert("RGB"), dtype=np.float32) / 255
+            c = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+            self._bd[n] = c[..., 0] * 0.2126 + c[..., 1] * 0.7152 + c[..., 2] * 0.0722
+        L = self._bd[n]
+        fh, fw = L.shape
+        x0, y0 = max(0, int(rect[0] / self.w * fw)), max(0, int(rect[1] / self.h * fh))
+        x1, y1 = min(fw, max(x0 + 1, int(rect[2] / self.w * fw))), min(fh, max(y0 + 1, int(rect[3] / self.h * fh)))
+        sub = L[y0:y1, x0:x1]
+        if sub.size == 0:
+            return None
+        return {"mean": float(sub.mean()), "low": float(np.percentile(sub, 10)), "high": float(np.percentile(sub, 90))}
 
     # ---- main -------------------------------------------------------------
     def frame(self, t, ctx=None):

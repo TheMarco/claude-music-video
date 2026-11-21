@@ -9,8 +9,8 @@ engine commit.
 It builds a throwaway project (a 24 s song at 120 BPM with a quiet intro, two test-pattern clips), then
 runs conform --check, analyze_song, gridcheck, audio_feats, edl (an edit generated on the grid, with a dissolve and a
 double exposure), contact --edl, render --stills (once with the empty fx.py, once with
-examples/fx_examples.py), sheet, a full render, beatsheet, qc, a vertical bar-locked part, and
-concept_dice. It checks that every step exits cleanly and writes what it should, that the analyzer
+examples/fx_examples.py), sheet, a full render, beatsheet, qc, heads, facecheck and contrastcheck (with
+the empty fx.py and with the examples), a vertical bar-locked part, and concept_dice. It checks that every step exits cleanly and writes what it should, that the analyzer
 finds the tempo, and that the render is as long as the song. It does not test lyrics transcription or
 person mattes (both download large models). --keep leaves the project in place for a look.
 """
@@ -135,6 +135,14 @@ def main():
     run(py, "mv/scripts/beatsheet.py", "mv/out/smoke_v1.mp4", "mv/work/beats.jpg", "8", "16")
     need("mv/work/beats.jpg")
     print(run(py, "mv/scripts/qc.py", "mv/out/smoke_v1.mp4", "--ignore-after", cfg["end"]))
+    print(run(py, "mv/scripts/heads.py", "--size", "480x270"))
+    need("mv/data/heads.json", "mv/review/heads_00.jpg")
+    print(run(py, "mv/scripts/facecheck.py", "--size", "960x540"))
+    print(run(py, "mv/scripts/contrastcheck.py", "--size", "960x540"))
+    shutil.copy(ENGINE / "examples" / "fx_examples.py", scripts / "fx.py")   # placed, outlined captions pass both
+    print(run(py, "mv/scripts/facecheck.py", "--size", "960x540", "--start", "3", "--end", "12"))
+    print(run(py, "mv/scripts/contrastcheck.py", "--size", "960x540", "--start", "3", "--end", "12"))
+    (scripts / "fx.py").write_text(empty_fx)
     run(py, "mv/scripts/render.py", "mv/out/smoke_hook.mp4", "--size", "1080x1920", "--start", "8", "--end", "16")
     need("mv/out/smoke_hook.mp4")
     run(py, ENGINE / "scripts" / "concept_dice.py", "--n", "1", "--seed", "1")
