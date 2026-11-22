@@ -14,6 +14,7 @@
 - Explaining graphics (devices.py)
 - Shaders and uniforms (fx.py)
 - Depth (make_depth.py)
+- Screens in the footage (track_screen.py)
 - Audio data
 - Lyrics
 - Fonts
@@ -55,7 +56,10 @@ instead, with a 0.6 s warm-up before each so echo and trails match the full rend
 made vertical: then set `SEG_SIZE = (1080, 1920)` in `look.py`, so segments keep the clips' own 9:16 frame
 instead of a 16:9 crop of it (sources of another shape are cropped to 9:16). Shots with a person matte are
 reframed on the person automatically; give other shots `pan=((x, 0), (x, 0))` to reframe (x is a texture
-offset; about ±0.34 reaches the edges in 9:16). Letterbox is skipped for non-wide output. Design `fx.py`
+offset; about ±0.34 reaches the edges in 9:16). The person centring follows the matte, so a two-shot
+gets the middle of both people or one of them (a drive shot lost the singer), and a shot carried by a
+car or a DJ's decks gets the person instead: give those `narrow_x=x`, the same offset, which only narrow
+renders use, or a code's default in `NARROW_X` at the top of `edl.py`. Letterbox is skipped for non-wide output. Design `fx.py`
 graphics in 1080p units times `ov.s` and use `ov.fit` for text, and they hold at every size; check
 `ov.wide` where a layout needs to change for narrow frames. Render the vertical version from the same
 EDL; adjust only shots that frame badly.
@@ -203,7 +207,9 @@ EDL time; otherwise the first frame of every shot inherits the last shot's heads
 
 The detector misses heads and invents others, and the review sheets (`mv/review/heads_NN.jpg`, every
 shot every 0.25 s with a 0.1 grid) are where both show. Misses: heads seen from behind or from above, a
-figure small in a wide, a head half out of frame, motion blur, a face lit only by a rim light. Inventions:
+figure small in a wide, a head half out of frame, motion blur, a face lit only by a rim light, a helmet,
+a mask or a visor (missed on every frame, so nothing on the sheets changes: `mv/review/heads_count.txt`
+lists the heads found per shot, and a two-shot with one head shows there). Inventions:
 a chain, a statue, a reflection. Fix them in `mv/data/heads_manual.json` (`add`, `clear`, `drop`, in
 heads.py's docstring) and run `heads.py --rebuild`. Crowd faces count when the detector finds them
 (boxes from 3% of the frame height). An older face pass that ran Haar on the source clips with hand-set
@@ -265,6 +271,16 @@ What fixed a slopcore video that failed it 151 times:
 - A rim on dark cards, a 3 px outline a few steps lighter than the fill, so a dark card on a dark shot
   still has an edge.
 - Glass and hollow letterforms with a dark edge outside their light outline.
+
+What a second slopcore video needed on top:
+- A dark halo behind front elements drawn only where the overlay is empty. A halo over the whole front
+  layer joined neighbouring elements into one, and they failed together.
+- One light colour per word stack: stacks mixing white and gold words failed where one cream for every
+  word passed.
+- Dot-matrix (LED) type with the unlit dots drawn solid and dark, a bright rim round the panel, and at
+  least one unlit dot column between letters (three between words), or the letters run together.
+- Small type sized per shape: captions and fine print that passed at 1920x1080 failed at 1080x1920
+  until the caption went from 36 to 46 px and the fine print to a bold weight with a 2 px outline.
 
 `ov.backdrop(rect, t)` returns the bare picture's luminance under a rect (mean, 10th and 90th
 percentile), for choosing a treatment per shot: dark type on a bright sky, a stronger shadow on a busy
@@ -372,6 +388,25 @@ A treatment is the footage's medium, chosen from the story (references/effects-i
 never the same one on neighbouring shots, and leave most shots untreated, so each one lands. `fx.py`
 can override `dTreat`, `dPhase`, `dAmt`, `dCol` and `dBehind` from `uniforms()` per frame.
 
+## Screens in the footage (track_screen.py)
+
+To put something on a screen, sign or window in a moving shot (a countdown on a tower, the line on a
+billboard), track the screen and bake the picture onto it as a new clip:
+```bash
+.venv/bin/python mv/scripts/track_screen.py W1 --quad 0.443,0.403,0.558,0.413,0.556,0.652,0.444,0.642
+.venv/bin/python mv/scripts/bake_screen.py W1 --panel panel.mp4 --out W1s1742
+```
+`--quad` is the screen's corners on the clip's first frame, clockwise from top left, in 0..1 (read them
+off a still with a grid). `track_screen.py` fits the screen's own four edges on every frame, carries an
+edge it can't see (cut by the frame edge, hidden by someone) from the frame before, smooths the corners
+(`--smooth clip` for one smooth camera move) and draws `mv/review/screen_CODE.jpg`: the outline has to
+sit on the screen's edge on every frame. Following the outline keeps the panel turning exactly with the
+building; on a drone shot an earlier tracker let the panel turn more than the tower, which the user
+caught, and a feature-point homography drifted. The screen has to differ from its surroundings in
+brightness, so generate it blank and dark ("a large blank black LED screen on the tower").
+`bake_screen.py` warps an image or a video onto it and copies the clip's matte and depth to the new
+code. Content tied to the song, like a countdown, is a panel video per shot and one baked copy per shot.
+
 ## Audio data
 
 `audio_feats.npz` per frame: `spec` (48 log bands, fast attack and slow release like a hardware
@@ -417,3 +452,6 @@ Futura are the usual reflex; start elsewhere.
 - `fx.py` imports `overlay` helpers; `overlay.py` imports `fx` lazily for that reason. Keep it that way.
 - A block placed from its first frame alone lands on a face later in its span: after a cut, or when the
   person moves or turns. Place it over the whole span (`ov.place`).
+- An effect that darkens or drops everything outside the person matte drops the props with it: a
+  "lights out" moment kept only the people, and the singer's car went black. Mattes hold people only;
+  keep such effects off shots that a car, a set or a prop carries.
