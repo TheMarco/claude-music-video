@@ -28,9 +28,15 @@ Shot options (all optional):
   cuts=True        the shot runs across a cut in its source on purpose (otherwise edl.py warns)
   sync=SONG_TIME   for lipsync shots: the song time where the source's own audio starts (0 for an
                    existing music video cut against its own soundtrack); the in-point is then computed
-                   so the mouth stays on the song (find it with sync_offset.py). The source's own
+                   so the mouth stays on the song (find it with sync_offset.py, which also lists
+                   stretches of a take that follow the song at a sync of their own). The source's own
                    picture/audio offset ("av_offset" in mv/data/mouths.json, measured with
                    lip_check.py) is applied on top
+  narrow_x=0.1     framing for narrow outputs (9:16, square) only: a horizontal offset like pan's x
+                   (about ±0.34 reaches the edges in 9:16) that replaces the automatic centring on the
+                   person and any pan there; the 16:9 render ignores it. For a two-shot the centring
+                   splits the difference or picks one person, and for a car or a prop it centres the
+                   wrong thing. NARROW_X sets it for every shot of a code
   matte=True       person matte for an archive shot (rembg on the segment), so fx.py can put graphics
                    behind the people in it; AI clips with a <CODE>_matte.mp4 get one automatically
 OVER track (double exposures over the main track):
@@ -56,6 +62,7 @@ ROOT = Path("mv")
 ARCHIVE_GRADE = "base"  # default grade for archive, library and photo shots (a key of GRADES in look.py)
 AI_GRADE = "ai"         # default grade for AI clips
 DEFAULT_GRADES = {}     # per-code default grade, e.g. {"A3": "mono", "P2": "dim"}
+NARROW_X = {}           # per-code framing for 9:16 and square renders, e.g. {"S9": 0.0, "S10": 0.1} (narrow_x)
 # Colour follows the story, not the source film: one grade per chapter, changing at a story turn.
 # [(song_time, grade), ...] for archive/library shots, e.g. [(0.0, "cold"), (DROPS[0], "warm")]
 STORY_GRADES = []
@@ -162,6 +169,8 @@ def default_grade(src, start=0.0):
 
 def seg_dict(src, t_in, dur, o, start=0.0):
     d = dict(src=src, dur=dur)
+    if src in globals().get("NARROW_X", {}):
+        d["narrow_x"] = NARROW_X[src]
     d.update(o)
     d.setdefault("grade", default_grade(src, start))
     ai = src != "BLACK" and is_ai(src)
@@ -294,12 +303,22 @@ def report(segs, grades):
         a, b = span(s)
         native = m.get("sync")
         off = float(m.get("av_offset", 0.0))
-        if native is not None and s.get("speed", 1.0) == 1.0 and abs(s["start"] - s["in"] - native - off) <= 0.05:
-            continue   # a singing take shown where it was recorded
         if any(a >= x - 0.05 and b <= y + 0.05 for x, y in m.get("safe", [])):
             continue   # mouth closed or out of view in this stretch
-        why = (f"recorded for song time {native + off + a:.2f}s" if native is not None
-               else "outside its mouth-safe ranges")
+        why = None
+        if native is not None and s.get("speed", 1.0) == 1.0:
+            shown = s["start"] - s["in"] - off
+            # where the take follows the song: "lock" at its sync, "also" stretches at their own (sync_offset.py)
+            fits = [(*m.get("lock", (-1e9, 1e9)), native)] + [tuple(x) for x in m.get("also", [])]
+            hit = [f for f in fits if abs(shown - f[2]) <= 0.05]
+            if any(a >= f0 - 0.05 and b <= f1 + 0.05 for f0, f1, _ in hit):
+                continue   # a singing take shown where it was recorded
+            if hit:
+                f0, f1, _ = hit[0]
+                why = f"the take follows the song at sync {shown:.2f} only in clip {f0:.1f}-{f1:.1f}s"
+        if why is None:
+            why = (f"recorded for song time {native + off + a:.2f}s" if native is not None
+                   else "outside its mouth-safe ranges")
         add("singer shots whose mouth may move off the lyrics (mouths.json)",
             f"{s['start']:7.2f}s {s['src']} clip {a:.1f}-{b:.1f}s, {why}")
 

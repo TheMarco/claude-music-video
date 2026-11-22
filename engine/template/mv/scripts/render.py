@@ -7,8 +7,9 @@ Usage:
   bar line, so the cut runs whole bars and a platform's auto-replay restarts on the beat; --exact keeps
   the times as given. The audio of a part gets a 3 ms fade at each cut edge so it doesn't click.
   --size 1080x1920 (vertical), 1080x1080 or 1080x1350 for social cuts: sources stay 16:9 and the frame
-  shows the middle of them; shots with a person matte are reframed on the person automatically, and
-  pan=((x, 0), (x, 0)) in the EDL reframes any other shot. Letterbox is skipped for non-wide output.
+  shows the middle of them; shots with a person matte are reframed on the person automatically,
+  pan=((x, 0), (x, 0)) in the EDL reframes any other shot, and narrow_x=x reframes a shot for narrow
+  outputs only (a two-shot, a car). Letterbox is skipped for non-wide output.
 
 Reads mv/data/edl.json (built by mv/scripts/edl.py), mv/data/song.json (via timing.py) and
 mv/data/audio_feats.npz (audio_feats.py). Each EDL segment is cut from its source by ffmpeg into
@@ -605,10 +606,15 @@ def main():
     with ThreadPoolExecutor(4) as ex:  # archive mattes read the color segments made above
         list(ex.map(prep_one, mattes))
     print(f"prepped {len(todo)} segments", flush=True)
-    if out_asp < 1.2:  # narrow output: center each matted shot on its person unless the EDL pans it
+    if out_asp < 1.2:  # narrow output: narrow_x where the EDL sets it, else center each matted shot on its person
         lim = max(0.0, 0.5 - 0.5 * out_asp / (SW / SH))
         for s in main_segs:
-            if needed(s) and s.get("mfile") and "pan" not in s and Path(s["mfile"]).exists():
+            if not needed(s):
+                continue
+            if "narrow_x" in s:
+                off = max(-lim, min(lim, float(s["narrow_x"])))
+                s["pan"] = ((off, 0.0), (off, 0.0))
+            elif s.get("mfile") and "pan" not in s and Path(s["mfile"]).exists():
                 off = max(-lim, min(lim, subject_x(s["mfile"]) - 0.5))
                 s["pan"] = ((off, 0.0), (off, 0.0))
 
