@@ -22,6 +22,9 @@ uniforms(t, a)  returns {name: value} per frame. a has: kick, snare, hat, rms (0
               vignette, ca, punch, flash, invert, scan, letterbox, fade, shockT/shockAmp.
 draw_behind(ov, img, t, f, ctx) draws on an RGBA canvas that sits behind the person matte.
 draw_front(ov, d, t, f, ctx)    draws over everything with the PIL ImageDraw d.
+SCREENS       {name: fn(t, shot)}: the picture a tracked screen in the footage shows at song time t (RGB
+              numpy array or PIL image), for shots with screen="name" in edl.py (screen.py;
+              screen.led_panel draws LED dot-matrix text).
               ov is the Overlay (overlay.py lists its helpers: fonts, fit, tracked text, layers, lyric
               timing, audio arrays indexed by frame f, kick and snare onsets). ctx has the shot's src,
               label, local time and duration.
@@ -37,6 +40,7 @@ method; examples/fx_examples.py in the engine folder ($ENGINE in SKILL.md) shows
 from overlay import F, FS, hash01, keyframes  # noqa: F401  (font folders and helpers)
 
 UNIFORMS = {}
+SCREENS = {}
 
 GLSL_COMP = """
 vec3 fxComp(vec3 col, vec2 uv, float matte){ return col; }

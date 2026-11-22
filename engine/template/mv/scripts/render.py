@@ -13,7 +13,9 @@ Usage:
 Reads mv/data/edl.json (built by mv/scripts/edl.py), mv/data/song.json (via timing.py) and
 mv/data/audio_feats.npz (audio_feats.py). Each EDL segment is cut from its source by ffmpeg into
 mv/work/seg/ (1280x720, or look.SEG_SIZE for footage made vertical; 24 fps, speed applied); AI clips with
-a person matte or a depth map (make_matte.py, make_depth.py) get matching matte and depth segments. Every output frame is then built on the GPU with moderngl:
+a person matte or a depth map (make_matte.py, make_depth.py) get matching matte and depth segments. Shots
+with screen="NAME" get fx.SCREENS' picture warped onto the screen tracked in their source (screen.py) as
+their frames are read. Every output frame is then built on the GPU with moderngl:
   pass 1  layer transforms (zoom/pan/rotate/shake, mirror, kaleidoscope), gradient-map grading,
           dissolves, double exposure (over track), the shot's depth treatment (depth_fx), echo/trail
           feedback, glitch; matte (and the behind_depth key) in alpha
@@ -46,6 +48,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 from media import GEN_IDS, crop_for, depth_path, is_ai, is_gen, is_image, matte_path, seg_size, src_path  # noqa: E402
 import fx  # noqa: E402
+import screen  # noqa: E402
 from look import FINISH, GRADES, PALETTES, SHADOW_TINT  # noqa: E402
 from overlay import Overlay  # noqa: E402
 from timing import (BEAT, DROPS, DUR, END, FPS, HIT_LEAD, SHOCKS, SONG, bar_line, beat_at, hit_phase,  # noqa: E402
@@ -453,7 +456,11 @@ class Track:
     def frame(self, seg, local):
         if seg["src"] == "BLACK" or is_gen(seg["src"]):
             return bytes(SW * SH * 3)
-        return self.reader(seg).get(max(0, int(round(local * FPS))))
+        k = max(0, int(round(local * FPS)))
+        buf = self.reader(seg).get(k)
+        if seg.get("screen"):   # a tracked screen in the shot, filled by fx.SCREENS (screen.py)
+            buf = screen.composite(buf, seg, k, getattr(fx, "SCREENS", {}), (SW, SH))
+        return buf
 
     def depth(self, seg, local):
         f = seg.get("dfile")

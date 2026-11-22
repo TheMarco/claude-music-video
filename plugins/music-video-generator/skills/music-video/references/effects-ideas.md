@@ -78,8 +78,9 @@ of micro type; a line whose picture already explains itself can go without.
   the beat no more often than chance would; their flashes sit within two frames of it).
 - **Attached to the picture.** Graphics that know where things are read as part of the shot: a label on
   a tracked head (`ov.heads`), a line drawn from the edge of the matte, a mark pinned to a fixed point in
-  a locked shot. Those three are what the engine can follow; don't plan an effect that needs a tracker
-  it doesn't have.
+  a locked shot, a screen in the shot that shows the video's own picture (`screen.py`, a blank screen
+  generated for it). Those four are what the engine can follow; don't plan an effect that needs a
+  tracker it doesn't have.
 - **Type that acts out its word.** The entrance has a reason: a word about pressure arrives crushed flat
   and springs to size, a word about doubt types, deletes and retypes, a word about heat arrives glowing
   and cools to the type's colour, a price falls digit by digit like an odometer run backwards. One

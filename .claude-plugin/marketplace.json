@@ -9,7 +9,7 @@
       "name": "music-video-generator",
       "source": "./plugins/music-video-generator",
       "description": "Make complete music videos from a song, with footage you supply or find, and overlays designed for each video.",
-      "version": "1.8.0"
+      "version": "1.9.0"
     }
   ]
 }
