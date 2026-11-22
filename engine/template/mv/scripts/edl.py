@@ -33,6 +33,8 @@ Shot options (all optional):
                    lip_check.py) is applied on top
   matte=True       person matte for an archive shot (rembg on the segment), so fx.py can put graphics
                    behind the people in it; AI clips with a <CODE>_matte.mp4 get one automatically
+  screen="NAME"    fill the screen tracked in this source (screen.py, mv/data/screen_<CODE>.json) with
+                   fx.SCREENS["NAME"](t, shot); screen_inset=0.94, screen_glow=0.35
 OVER track (double exposures over the main track):
   (start_beat, beats, src, in_seconds, dict(op=0.4, blend="screen"|"add"|"lighten"|"diff", fade=0.4, ...))
 

@@ -10,7 +10,8 @@ It builds a throwaway project (a 24 s song at 120 BPM with a quiet intro, two te
 runs conform --check, analyze_song, gridcheck, audio_feats, edl (an edit generated on the grid, with a dissolve and a
 double exposure), contact --edl, render --stills (once with the empty fx.py, once with
 examples/fx_examples.py), sheet, a full render, beatsheet, qc, heads, facecheck and contrastcheck (with
-the empty fx.py and with the examples), a vertical bar-locked part, and concept_dice. It checks that every step exits cleanly and writes what it should, that the analyzer
+the empty fx.py and with the examples), a vertical bar-locked part, a tracked screen (screen.py on a
+clip with a dark panel moving through it, then a still with the panel filled), and concept_dice. It checks that every step exits cleanly and writes what it should, that the analyzer
 finds the tempo, and that the render is as long as the song. It does not test lyrics transcription or
 person mattes or depth maps (all three download large models; the depth treatments still compile and run
 without a map). --keep leaves the project in place for a look.
@@ -61,6 +62,41 @@ def song(path):
         if k >= 16 and j + len(hat) < len(y):
             y[j:j + len(hat)] += 0.15 * hat
     sf.write(path, np.clip(y, -1, 1), SR, subtype="PCM_16")
+
+
+SCREEN_FX = """
+
+def _magenta(t, shot):
+    import numpy as np
+    pic = np.zeros((90, 160, 3), np.uint8)
+    pic[...] = (255, 0, 255)
+    return pic
+
+
+SCREENS = {"panel": _magenta}
+"""
+
+
+def screen_clip(path, n=48, w=640, h=360):
+    """A dark panel drifting across a grey textured wall; returns its true corners per frame."""
+    rng = np.random.default_rng(2)
+    wall = (110 + 40 * rng.random((h // 8, w // 8))).astype(np.uint8)
+    wall = np.kron(wall, np.ones((8, 8), np.uint8))
+    base = np.array([[250, 100], [400, 108], [396, 250], [246, 242]], float)
+    p = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "gray", "-s", f"{w}x{h}",
+                          "-r", "24", "-i", "-", "-c:v", "libx264", "-crf", "12", "-pix_fmt", "yuv420p", str(path)],
+                         stdin=subprocess.PIPE)
+    import cv2
+    truth = []
+    for k in range(n):
+        q = base + [40 * k / (n - 1), 12 * k / (n - 1)]
+        f = wall.copy()
+        cv2.fillPoly(f, [q.round().astype(np.int32)], 10)
+        p.stdin.write(f.tobytes())
+        truth.append(q / [w, h])
+    p.stdin.close()
+    p.wait()
+    return np.array(truth)
 
 
 def main():
@@ -147,6 +183,30 @@ def main():
     run(py, "mv/scripts/render.py", "mv/out/smoke_hook.mp4", "--size", "1080x1920", "--start", "8", "--end", "16")
     need("mv/out/smoke_hook.mp4")
     run(py, ENGINE / "scripts" / "concept_dice.py", "--n", "1", "--seed", "1")
+
+    truth = screen_clip(root / "footage/c.mp4")
+    codes = json.loads((root / "mv/data/codes.json").read_text())
+    (root / "mv/data/codes.json").write_text(json.dumps(dict(codes, C1="footage/c.mp4")))
+    print(run(py, "mv/scripts/screen.py", "C1"))
+    need("mv/data/screen_C1.json", "mv/review/screen_C1.jpg")
+    tr = json.loads((root / "mv/data/screen_C1.json").read_text())
+    off = np.abs(np.array(tr["quads"]) - truth[:len(tr["quads"])]) * [640, 360]
+    if off.max() > 3 or not all(tr["ok"]):
+        sys.exit(f"FAILED: screen track off by up to {off.max():.1f} px, {sum(tr['ok'])}/{len(tr['ok'])} frames ok")
+    e = json.loads((root / "mv/data/edl.json").read_text())
+    e["main"][0].update(src="C1", screen="panel", grade="orig")
+    e["main"][0]["in"] = 0.0
+    (root / "mv/data/edl.json").write_text(json.dumps(e))
+    (scripts / "fx.py").write_text(empty_fx + SCREEN_FX)
+    run(py, "mv/scripts/render.py", "mv/work/stills/scr", "--stills", "1")
+    (scripts / "fx.py").write_text(empty_fx)
+    from PIL import Image
+    still = np.asarray(Image.open(next((root / "mv/work/stills").glob("scr_*.jpg"))).convert("RGB")).astype(float)
+    H, W = still.shape[:2]
+    cx, cy = (truth[24].mean(0) * [W, H]).round().astype(int)
+    r, g, b = still[cy - 5:cy + 5, cx - 5:cx + 5].reshape(-1, 3).mean(0)
+    if not (r > g + 60 and b > g + 60):
+        sys.exit(f"FAILED: the tracked screen isn't filled at its centre (rgb {r:.0f},{g:.0f},{b:.0f})")
 
     print(f"OK: every step ran ({root})" if args.keep else "OK: every step ran")
     if not args.keep and not args.dir:
