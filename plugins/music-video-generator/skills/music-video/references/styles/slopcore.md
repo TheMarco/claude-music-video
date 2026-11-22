@@ -128,7 +128,9 @@ story moves; the explaining graphics come from the engine's device library, item
 
 - **Text in the world.** A line written on something in the shot: a departure board, a neon sign with
   one letter out that changes the word, a cake with the line piped on it, a protest sign in a crowd, a
-  tattoo. Generate the prop blank in a locked or slow shot and set the type inside its rectangle.
+  tattoo. Generate the prop blank in a locked or slow shot and set the type inside its rectangle. A
+  screen (an LED wall on a tower, a billboard, a phone) can move: it is tracked and filled per frame
+  (references/compositor.md, "Screens in the shot").
 - **The tool that made it.** Claude Code's own interface, drawn and turned into the line's joke: a
   permission prompt for the edit itself ("Allow Claude to cut to the chorus?"), the context meter
   filling as the song plays and compacting at the bridge, a diff of the lyric as the singer changes a

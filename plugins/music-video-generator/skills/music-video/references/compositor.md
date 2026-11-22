@@ -14,6 +14,7 @@
 - Explaining graphics (devices.py)
 - Shaders and uniforms (fx.py)
 - Depth (make_depth.py)
+- Screens in the shot (screen.py)
 - Audio data
 - Lyrics
 - Fonts
@@ -83,6 +84,7 @@ All are documented in `edl.py`. Typical uses:
 - OVER track at `op=0.3-0.45`: one film over another.
 - `depth_fx="relight"`, `"contours"`, `"scan"` or `"haze"` with `depth_rate`, `depth_amt`, `depth_col`, and
   `behind_depth=0.6` on shots with a depth map ("Depth").
+- `screen="NAME"` fills a tracked screen in the shot with `fx.SCREENS["NAME"]` ("Screens in the shot").
 - Any other keyword is passed through to `fx.py` as `a["shot"]["name"]`, so a concept can add its own
   per-shot controls.
 
@@ -371,6 +373,48 @@ Per shot in `edl.py`:
 A treatment is the footage's medium, chosen from the story (references/effects-ideas.md): rotate them,
 never the same one on neighbouring shots, and leave most shots untreated, so each one lands. `fx.py`
 can override `dTreat`, `dPhase`, `dAmt`, `dCol` and `dBehind` from `uniforms()` per frame.
+
+## Screens in the shot (screen.py)
+
+A screen in the footage that shows the video's own picture reads as part of the world: the gold LED
+countdown on the tower in "Tomorrow Just Dropped", a score on a stadium board, a line on a billboard, a
+chat on the phone in her hand. The engine tracks the screen once and fills it in every frame a shot shows
+it, keyed to song time, so a clock or a counter is right in every shot of it, in any order.
+
+1. **Generate it blank.** Ask for the screen dark and switched off ("a blank black LED screen on the
+   tower's facade", "a phone with a black screen"), flat, in frame for the whole clip, nothing passing
+   in front of it, with one smooth camera move (a drone orbit, a push-in, a slow pan). The dark
+   rectangle is what the tracker finds; a screen the generator lit with its own content can't be
+   replaced cleanly. Put it in the concept's line table so the set plate and the footage prompt carry
+   it.
+2. **Track it.** `.venv/bin/python mv/scripts/screen.py W1` writes `mv/data/screen_W1.json` and a check
+   sheet, `mv/review/screen_W1.jpg`: 12 frames with the outline green where the track holds and red
+   where it doesn't. It prints the span of the source where the track holds; keep every shot's in-point
+   and end inside it. Look at the sheet. `--at 0.3,0.4` picks a screen away from the middle of the
+   frame, `--dark 40` takes a grey screen. When the AI morphs the building or something crosses the
+   screen, those frames go red: one tower clip in "Tomorrow Just Dropped" held for its first second
+   before a falling mirror ball broke it, and its shots stayed plain.
+3. **Draw what it shows** in `fx.py`: `SCREENS = {"countdown": tower}`, where `tower(t, shot)` returns
+   the picture for song time `t`, an RGB numpy array or a PIL image in the screen's aspect (520x600 for
+   a tall one). `screen.led_panel([("T-MINUS", 7), ("04:03", 13), ("TO TOMORROW", 7)], color=(255, 200,
+   96))` draws an LED dot-matrix panel: every letter on its own, one dark column of dots between
+   letters and three between words, unlit dots dim. Letters that touch read as a smear (the first
+   version had them). Anything drawn with PIL works too: a scoreboard, a chat, a frame from another
+   shot.
+4. **Put it on the shots**: `screen="countdown"` on every shot of that source in `edl.py`. `render.py`
+   warps the picture onto the screen in every frame it reads, following the in-point, speed and crop,
+   with the grade, bloom and grain over it like the rest of the footage. `screen_inset=0.94` (default)
+   leaves the screen's own frame showing, `screen_glow=0.35` sets the light it throws around itself.
+   Reversed shots stay plain.
+
+What the screen shows belongs to the story: the video's spine number (a countdown that lands on the
+drop), a line of the lyric, the world reacting to what just happened. It is the world's own display, so
+it uses the world's type (LED dots, a stadium board, a phone's interface), not the overlay type.
+
+The tracker fits the screen's top and side edges as lines and smooths each corner over the clip. Keep
+it that way: the first version fitted a rotated box, and the text turned further than the tower did.
+Render stills across every screen shot and look at the panel's edges against the building before the
+full render.
 
 ## Audio data
 

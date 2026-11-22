@@ -30,7 +30,7 @@ user installs them once per engine version into `~/.claude/music-video/engine/<c
 
 ```bash
 SKILL="<base directory>"
-ENGINE_REV=ade71698060a6e0c6cd829e567231df5be5e4dca
+ENGINE_REV=56021acadc15c50ddfccfe181f4cca82e27b777d
 ENGINE="$HOME/.claude/music-video/engine/$ENGINE_REV"
 ```
 
@@ -38,7 +38,7 @@ Shell variables don't carry over from one command to the next. Start every comma
 `$ENGINE` or `$ENGINE_REV` with these three lines.
 
 **Check for the engine before anything else:** `test -f "$ENGINE/template/mv/scripts/render.py"`. When
-it is missing, stop. Tell the user this skill needs engine version `ade7169`, give them
+it is missing, stop. Tell the user this skill needs engine version `56021ac`, give them
 https://github.com/TheMarco/claude-music-video#install-the-engine, and wait for them to say it is
 installed. They run those steps themselves: don't download or install the engine for them, and don't
 fall back to an older engine folder that happens to be there. Then check again and go on. The template in it (`$ENGINE/template/mv/scripts/`) is a working pipeline. Copy it
@@ -235,7 +235,9 @@ still places and draws blocks its own way: run all three, move any block `facech
 `ov.place`, and outline the type `contrastcheck.py` lists. Render stills at 4-6
 moments with both and compare before changing anything else. A project from before engine ade7169 gains
 `devices.py` and `make_depth.py` and needs no change to keep rendering as before; one that patched
-`render.py` and `media.py` for vertical footage sets `SEG_SIZE` in its `look.py` instead.
+`render.py` and `media.py` for vertical footage sets `SEG_SIZE` in its `look.py` instead. A project
+from before engine 56021ac gains `screen.py` and renders as before; one that baked a screen into copies of
+a clip can drop those copies and use `screen=` in `edl.py` with `SCREENS` in `fx.py`.
 
 ## Phase 2: the song
 
@@ -369,7 +371,8 @@ lines returns unless the user asks.
 Once the user has chosen, write the concept into `mv/NOTES.md`: it steers the footage (Phase 4) and the
 edit (Phase 5), and it is built in Phase 6. Include a line table: each line's time, its explaining graphic
 (the device and the facts it shows) and any depth treatment on its shot, so the footage prompts carry what
-the graphics need (the object to label, an empty side for a panel, a wide with depth for a treatment).
+the graphics need (the object to label, an empty side for a panel, a wide with depth for a treatment, a
+blank dark screen for a display that shows the video's own picture).
 In an instrumental the rows are the written script or the sections.
 
 ## Phase 4: footage
@@ -404,7 +407,9 @@ resolutions, audio, price), getting local reference photos to the provider, down
 - Save clips as `mv/clips/<CODE>.mp4` with short codes (P1-P6 for one performer, Q1-Q6 for another):
   `python3 -I mv/scripts/fetch_clip.py mv/clips/P1.mp4 URL`. Then make mattes: `.venv/bin/python mv/scripts/make_matte.py mv/clips/*.mp4` (skip files already
   ending in `_matte`), and depth maps for the clips whose shots get a depth treatment or `behind_depth`:
-  `.venv/bin/python mv/scripts/make_depth.py mv/clips/W1.mp4 ...` (about 7 s per second of footage).
+  `.venv/bin/python mv/scripts/make_depth.py mv/clips/W1.mp4 ...` (about 7 s per second of footage),
+  and screen tracks for clips with a blank screen to fill: `.venv/bin/python mv/scripts/screen.py W1`,
+  then look at its check sheet (`references/compositor.md`, "Screens in the shot").
 - **Check every clip's frame rate as it arrives**, before mattes, sync measurement and the edit:
   `.venv/bin/python mv/scripts/conform.py mv/clips/*.mp4`. Some generators write 24 fps takes on a
   60 fps clock with uneven gaps between frames; read as stated, those clips get frames duplicated or
