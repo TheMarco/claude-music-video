@@ -115,8 +115,12 @@ audio starts and record it in `mv/data/mouths.json`, then place it with `S("L1",
 time>)`; the EDL computes the in-point. A take from a `lipsync_slice.py` slice is matched against the
 audio its slice was cut from, near the slice's time; expect it within about 0.1 s of the slice start.
 Under 0.4 similarity the script saves nothing: listen to the take, and make it again if the line is
-re-sung or garbled. Windows that disagree in the sync report mean drift there:
-start that cut later or nudge `sync` per cut.
+re-sung or garbled. The report then follows the take in 0.5 s windows: EARLY is a lead-in that doesn't
+follow the song (start the shot where the take locks), and a stretch that follows at a sync of its own
+is listed with that sync, which `--save` stores as `"also"` beside `"lock"`, so a shot of that stretch
+at its own sync passes `edl.py`'s check. Inside one line, prefer `warp_take.py CODE FROM TO` to pieces:
+it re-times the take onto the song as one shot, warps its matte and depth to match, and writes a clip to
+place with the sync it prints (SKILL.md Phase 6, "Lip sync").
 
 A source's mouth can also sit off its own audio: footage that has been downloaded, re-encoded or edited
 sometimes carries an offset, and `sync` alone then places every shot exactly as wrong as the file. Set
@@ -182,7 +186,9 @@ only when the user asks for it, and work the way they choose:
   named in upload order (`Image1_face.png`, `Image2_outfit.png`, `Image3_place.png`,
   `Video1_slice.mp4`), `prompt.txt` and `settings.txt` (model, resolution, aspect, seconds, audio on or
   off), plus an `INDEX.md` listing every take. The user uploads and submits; downloads go through
-  `conform.py` and, for singing takes, `sync_offset.py --save`.
+  `conform.py` and, for singing takes, `sync_offset.py --save`. Start every prompt with the take's code
+  in brackets (`【Take S05】 ...`): web apps name a download after the prompt's first words, so each file
+  then says which take it is.
 - **Driving the user's browser**, only with their explicit permission for that site, in the tab they
   open. Submit one test take, let the user judge it, then the batch. Keep a per-take log of what was
   submitted, so a failed or refunded job is retried once and never double-submitted.
@@ -201,8 +207,17 @@ models and prices.
 - Downloads state 60 fps and hold 24 fps frames with uneven gaps: run `conform.py` on every file.
   Files fetched from the Assets page carry no "AI" badge.
 - Batch download from Assets (select several, Download) arrives as one zip after a delay that can
-  run to 20 minutes; a single clip downloads as a plain mp4. Match files to takes by kind and length.
+  run to 20 minutes; a single clip downloads as a plain mp4. With the take code at the start of every
+  prompt (above), the file names say which take each one is.
 - A take that failed four times with one place reference passed at once with another. Change the
   references or the prompt after the second failure.
-- Seedance 2.5 started each take on the slice's true first word even when the slice was cut badly,
-  so sync held; what a bad slice loses is the end of the line.
+- On that video Seedance 2.5 started each take on the slice's true first word, so one sync held per
+  take. On a second (November 2026, 13 lip-sync takes) 6 takes didn't follow the vocal for their first
+  second or more and 3 held part of their line at an offset of their own: measure every take in 0.5 s
+  windows (`sync_offset.py`) before placing it. What a badly cut slice loses is the end of the line.
+- An audio file as the reference costs 29 credits/s instead of 58, but the model sings the line again
+  in its own timing, which drifts inside the line. Use the black video carrying the vocal for sung lines.
+- Driving the page with claude-in-chrome: a script call in the page times out after 45 s, so prepare the
+  references and submit in separate calls; a file upload carries about 10 MB per call; reloading the
+  page drops any helpers added to it and opens the composer in AI Agent mode, so switch back to AI video
+  before the next submit. Rejected and refunded jobs went through on an unchanged retry.

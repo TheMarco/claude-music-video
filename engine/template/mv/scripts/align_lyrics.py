@@ -9,6 +9,14 @@ sequences are aligned with difflib: matched words keep their times, replaced run
 one to one, other runs are spread evenly over the time Whisper gave them, and words Whisper never heard
 are spread over the gap between their neighbours.
 
+Repeated sections (choruses sung three times, a hook that comes back) can pull lines onto the wrong
+repeat when Whisper missed or garbled one of them. Give a section label a song time and the alignment
+runs per section instead, each against only the words Whisper heard inside its own stretch of the song:
+    [chorus 2 @131.4]
+A timed label starts a stretch that runs to the next timed label (or the end of the song); untimed labels
+inside it stay part of it, and lines before the first timed label get the stretch from 0. Take the times
+from Whisper's lines in mv/data/lyrics_whisper.json; a second or so early is fine.
+
 Reads mv/data/lyrics.json as written by analyze_song.py --lyrics, keeps that file as
 mv/data/lyrics_whisper.json (later runs read it from there), and writes mv/data/lyrics.json in the
 same format with the real lines. It prints every line with its times; words after "~" got estimated
@@ -28,18 +36,9 @@ def norm(w):
     return re.sub(r"[^\w']", "", w.lower())
 
 
-def main():
-    if len(sys.argv) != 2:
-        sys.exit(__doc__)
-    rows = [ln.strip() for ln in Path(sys.argv[1]).read_text().splitlines()]
-    lines = [ln for ln in rows if ln and ln[0] not in "#[" and any(norm(w) for w in ln.split())]
-    if not WHISPER.exists():
-        if not OUT.exists():
-            sys.exit("no mv/data/lyrics.json; run analyze_song.py --lyrics first")
-        WHISPER.write_text(OUT.read_text())
-    heard = [w for seg in json.loads(WHISPER.read_text()) for w in seg.get("words", []) if norm(w["w"])]
-    if not heard:
-        sys.exit(f"{WHISPER} has no word times")
+def align(lines, heard, floor=0.0):
+    """Word times for lines from the words Whisper heard: [(line, [(word, start, end, exact)])]. Unheard words
+    before the first heard one get 0.4 s each before it, no earlier than floor."""
     true = [(i, w) for i, ln in enumerate(lines) for w in ln.split() if norm(w)]
     a = [norm(w) for _, w in true]
     b = [norm(w["w"]) for w in heard]
@@ -61,23 +60,60 @@ def main():
             e = k
             while e < len(times) and times[e] is None:
                 e += 1
-            t0 = times[k - 1][1] if k > 0 else 0.0
-            t1 = times[e][0] if e < len(times) else t0 + 0.4 * (e - k)
             n = e - k
+            t1 = times[e][0] if e < len(times) else None
+            t0 = times[k - 1][1] if k > 0 else max(floor, (t1 if t1 is not None else floor) - 0.4 * n)
+            t1 = t1 if t1 is not None else t0 + 0.4 * n
             for m in range(n):
                 times[k + m] = (t0 + (t1 - t0) * m / n, t0 + (t1 - t0) * (m + 1) / n)
             k = e
         else:
             k += 1
+    return [(ln, [(true[k][1], *times[k], exact[k]) for k, (li, _) in enumerate(true) if li == i])
+            for i, ln in enumerate(lines)]
+
+
+def stretches(rows):
+    """The lyric's lines grouped by timed section labels ("[chorus 2 @131.4]"): [(t0, t1, lines)]."""
+    groups, t = [[0.0, []]], None
+    for ln in rows:
+        m = re.match(r"\[[^\]]*@\s*([0-9]+(?:\.[0-9]+)?)\s*\]", ln)
+        if m:
+            t = float(m.group(1))
+            groups.append([t, []])
+        elif ln and ln[0] not in "#[" and any(norm(w) for w in ln.split()):
+            groups[-1][1].append(ln)
+    groups = [g for g in groups if g[1]]
+    return [(g[0], nxt[0] if nxt else 1e9, g[1]) for g, nxt in zip(groups, groups[1:] + [None])]
+
+
+def main():
+    if len(sys.argv) != 2:
+        sys.exit(__doc__)
+    rows = [ln.strip() for ln in Path(sys.argv[1]).read_text().splitlines()]
+    if not WHISPER.exists():
+        if not OUT.exists():
+            sys.exit("no mv/data/lyrics.json; run analyze_song.py --lyrics first")
+        WHISPER.write_text(OUT.read_text())
+    heard = [w for seg in json.loads(WHISPER.read_text()) for w in seg.get("words", []) if norm(w["w"])]
+    if not heard:
+        sys.exit(f"{WHISPER} has no word times")
+    parts = stretches(rows)
+    if len(parts) > 1:
+        print(f"aligning {len(parts)} stretches separately (timed section labels)")
     out, loose = [], 0
-    for i, ln in enumerate(lines):
-        idx = [k for k, (li, _) in enumerate(true) if li == i]
-        words = [{"w": true[k][1], "start": round(times[k][0], 2), "end": round(times[k][1], 2)} for k in idx]
-        miss = [true[k][1] for k in idx if not exact[k]]
-        loose += bool(miss)
-        out.append({"start": words[0]["start"], "end": words[-1]["end"], "text": ln, "suspect": False,
-                    "words": words, "unheard": miss})
-        print(f"{words[0]['start']:7.2f}-{words[-1]['end']:7.2f}  {ln}" + (f"   ~ {' '.join(miss)}" if miss else ""))
+    for t0, t1, lines in parts:
+        mine = [w for w in heard if t0 <= (w["start"] + w["end"]) / 2 < t1]
+        if not mine:
+            print(f"  no words heard in {t0:.2f}-{min(t1, 9999):.2f}s: check that stretch's label time")
+            mine = [{"w": "", "start": t0, "end": t0}]
+        for ln, ws in align(lines, mine, t0):
+            words = [{"w": w, "start": round(a, 2), "end": round(b, 2)} for w, a, b, _ in ws]
+            miss = [w for w, _, _, ex in ws if not ex]
+            loose += bool(miss)
+            out.append({"start": words[0]["start"], "end": words[-1]["end"], "text": ln, "suspect": False,
+                        "words": words, "unheard": miss})
+            print(f"{words[0]['start']:7.2f}-{words[-1]['end']:7.2f}  {ln}" + (f"   ~ {' '.join(miss)}" if miss else ""))
     OUT.write_text(json.dumps(out, indent=1))
     print(f"wrote {OUT}: {len(out)} lines, {loose} with estimated word times (~); Whisper's own lines are in {WHISPER}")
 

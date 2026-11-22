@@ -47,10 +47,10 @@ section). The skill copies them into each project from there.
 
 The skill is pinned to one engine commit (`ENGINE_REV` in `SKILL.md`) and looks for it in
 `~/.claude/music-video/engine/<commit>/`. When it isn't there, the skill stops and sends you here. The
-current version is `ade7169`:
+current version is `182018f`:
 
 ```
-ENGINE_REV=ade71698060a6e0c6cd829e567231df5be5e4dca
+ENGINE_REV=182018f1ab78e87b07fe4056bce602fa8dcf1042
 DEST="$HOME/.claude/music-video/engine/$ENGINE_REV"
 mkdir -p "$DEST" &&
 curl -fsSL "https://codeload.github.com/TheMarco/claude-music-video/tar.gz/$ENGINE_REV" |
@@ -63,9 +63,9 @@ every file is plain Python you can read first. With git instead:
 
 ```
 git clone https://github.com/TheMarco/claude-music-video.git && cd claude-music-video
-git checkout ade71698060a6e0c6cd829e567231df5be5e4dca
-mkdir -p ~/.claude/music-video/engine/ade71698060a6e0c6cd829e567231df5be5e4dca
-cp -R engine/. ~/.claude/music-video/engine/ade71698060a6e0c6cd829e567231df5be5e4dca/
+git checkout 182018f1ab78e87b07fe4056bce602fa8dcf1042
+mkdir -p ~/.claude/music-video/engine/182018f1ab78e87b07fe4056bce602fa8dcf1042
+cp -R engine/. ~/.claude/music-video/engine/182018f1ab78e87b07fe4056bce602fa8dcf1042/
 ```
 
 After an update of the plugin the skill may ask for a newer engine: run the same steps with the commit

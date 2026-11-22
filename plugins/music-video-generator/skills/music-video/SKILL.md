@@ -30,7 +30,7 @@ user installs them once per engine version into `~/.claude/music-video/engine/<c
 
 ```bash
 SKILL="<base directory>"
-ENGINE_REV=ade71698060a6e0c6cd829e567231df5be5e4dca
+ENGINE_REV=182018f1ab78e87b07fe4056bce602fa8dcf1042
 ENGINE="$HOME/.claude/music-video/engine/$ENGINE_REV"
 ```
 
@@ -38,7 +38,7 @@ Shell variables don't carry over from one command to the next. Start every comma
 `$ENGINE` or `$ENGINE_REV` with these three lines.
 
 **Check for the engine before anything else:** `test -f "$ENGINE/template/mv/scripts/render.py"`. When
-it is missing, stop. Tell the user this skill needs engine version `ade7169`, give them
+it is missing, stop. Tell the user this skill needs engine version `182018f`, give them
 https://github.com/TheMarco/claude-music-video#install-the-engine, and wait for them to say it is
 installed. They run those steps themselves: don't download or install the engine for them, and don't
 fall back to an older engine folder that happens to be there. Then check again and go on. The template in it (`$ENGINE/template/mv/scripts/`) is a working pipeline. Copy it
@@ -70,7 +70,7 @@ Every request uses the same pipeline; the request type decides which phases matt
 | Lyric video | any backgrounds | Confirmed lyrics; line and word timings from `ov.lyric_at(t)`; a type treatment designed for the song |
 | Performance / lipsync | AI lipsync clips | `references/video-providers.md` "Lipsync": one take per sung line, shown only where it was recorded; `sync_offset.py --save`, `mouth_check.py`, `mv/data/mouths.json` |
 | Photo or album-art video | stills in `codes.json` | Slow zoom and pan per shot; grades; overlays between photos |
-| Vertical or square cut, teaser | an existing edit | `render.py --size 1080x1920` (matted shots reframe on the person); `--start/--end` for a 15-30 s hook (see Phase 6) |
+| Vertical or square cut, teaser | an existing edit | `render.py --size 1080x1920` (matted shots reframe on the person; `narrow_x` for two-shots and props); `--start/--end` for a 15-30 s hook (see Phase 6) |
 | The user's own footage | local files in `codes.json` | Same as archive; check framing with contact sheets |
 | Slopcore, or another named style | AI performer, lip sync on every sung line | "Named styles" below: the style's file is the specification |
 | Remake of an existing music video | the original video plus new footage | The original's soundtrack is the song and its timing is final: singer shots at their own song times (`sync=0`), the original audio stream kept (Phase 6, "Lip sync"); anything the user excludes (a person, a logo) checked on every shot's full visible span (Phase 5) |
@@ -235,7 +235,11 @@ still places and draws blocks its own way: run all three, move any block `facech
 `ov.place`, and outline the type `contrastcheck.py` lists. Render stills at 4-6
 moments with both and compare before changing anything else. A project from before engine ade7169 gains
 `devices.py` and `make_depth.py` and needs no change to keep rendering as before; one that patched
-`render.py` and `media.py` for vertical footage sets `SEG_SIZE` in its `look.py` instead.
+`render.py` and `media.py` for vertical footage sets `SEG_SIZE` in its `look.py` instead. A project
+from before engine 182018f gains `warp_take.py`, `track_screen.py` and `bake_screen.py` and needs no
+change; run `sync_offset.py --save` again on its lip-sync takes so `mouths.json` holds the stretches
+`edl.py` now checks shots against, and add `NARROW_X = {}` beside `DEFAULT_GRADES` in `edl.py` when it
+wants per-code 9:16 framing.
 
 ## Phase 2: the song
 
@@ -289,6 +293,13 @@ and want a listen. Take every line start from this file. Never read line starts 
 loudness: a dip can sit a whole phrase away from the line (a spoken "play it again" before a verse was
 taken for the verse's first word, and every slice cut from those times opened inside the previous
 line and lost the end of its own).
+
+A song that repeats a section (a chorus sung three times, a hook that comes back) can pull lines onto
+the wrong repeat when Whisper half-heard one of them. Write each section label in `lyrics.txt` with its
+song time, read off Whisper's lines in `mv/data/lyrics_whisper.json` (`[chorus 2 @131.4]`), and
+`align_lyrics.py` aligns every section against only the words heard in its own stretch. On a song with
+three choruses the untimed alignment put 36 of 102 lines on the wrong chorus, 22 of them stacked on
+one time; with timed labels none landed on the wrong chorus.
 
 Then `.venv/bin/python mv/scripts/audio_feats.py` writes the per-frame spectrum, loudness, kick,
 snare, hi-hat and waveform data the overlays can react to.
@@ -401,6 +412,11 @@ resolutions, audio, price), getting local reference photos to the provider, down
   lipsync unless asked; frame people knees-up or closer so faces hold; for masked characters say the
   face is never shown. Write the concept's look into the prompts (light, color, era) so the clips are
   shot for it rather than graded into it afterwards.
+- **Everyone whose place is in the frame is in the prompt and the references.** A set that belongs to a
+  character (the DJ's decks, the driver's seat) comes back empty, or with the wrong person in it, when
+  the prompt names the place but carries no reference for its person: three booth shots came back
+  without the DJ. Say where the feet go in dance shots ("both feet on the terrace floor") and keep
+  tables, booths and ledges a dancer could climb out of the frame; a model will put the dancer on top.
 - Save clips as `mv/clips/<CODE>.mp4` with short codes (P1-P6 for one performer, Q1-Q6 for another):
   `python3 -I mv/scripts/fetch_clip.py mv/clips/P1.mp4 URL`. Then make mattes: `.venv/bin/python mv/scripts/make_matte.py mv/clips/*.mp4` (skip files already
   ending in `_matte`), and depth maps for the clips whose shots get a depth treatment or `behind_depth`:
@@ -413,8 +429,17 @@ resolutions, audio, price), getting local reference photos to the provider, down
 - **Check every clip against its references before the edit.** Contact-sheet the batch
   (`contact.py`) next to the outfit and set stills and look at each clip for: the right outfit, every
   piece of it (top, shoes, accessories); the face in frame when the take sings; the framing the prompt
-  asked for; nobody in shot who shouldn't be. Retake what fails now. A wrong top that reaches the
-  user in a finished cut costs a render and a round of review.
+  asked for; nobody in shot who shouldn't be. Then play each clip through, since a midpoint frame
+  doesn't show motion, and look for: a body passing through a door, a car or another person; someone
+  standing on a table, a booth or a ledge, or with their feet above a prop they should stand behind; a
+  character's own place empty, or the wrong person in it, where the story has them there; who sits at
+  the wheel. Retake what fails now. A wrong top that reaches the user in a finished cut costs a render
+  and a round of review. On one video every retake after the main batch came from this list (the DJ at
+  the wheel, a cape flaring like wings beside the car, the DJ missing from his booth in three takes, the
+  singer standing on top of the booth): 899 credits, 8% of the spend, and three rounds of review.
+- **Story order holds across the edit.** Nobody arrives, gets out or walks in twice: a clip that shows
+  the arrival goes before every clip that shows her already there, and a later take of the same action
+  is cut or replaced.
 - When a job keeps failing with the same inputs, change the inputs, not the number of tries: another
   place or outfit reference, a reworded prompt, a different slice length.
 - Write each job id into `mv/NOTES.md` when you submit it, so a lost context can pick the jobs up.
@@ -521,7 +546,10 @@ every block stays off every face.
 **Faces stay clear.** Once the edit is cut, `heads.py` renders it without overlays and tracks every head
 on every frame into `mv/data/heads.json`; run it again after every EDL change. Look at each of its
 sheets (`mv/review/heads_NN.jpg`) and add the heads it missed, back views and small figures above all,
-in `mv/data/heads_manual.json`. `fx.py` places every block with `ov.place` over the block's whole time
+in `mv/data/heads_manual.json`. A helmet, a mask or a visor is missed on every frame, so the sheets show
+no gap: read `mv/review/heads_count.txt`, the heads found per shot, against who is in each shot. After a
+retake replaces a clip, run `heads.py` without `--rebuild`; it names the hand boxes drawn for the old
+take. `fx.py` places every block with `ov.place` over the block's whole time
 on screen, so a block moves at a cut or shrinks rather than sit on a face, and `facecheck.py` at the
 output size has to pass (exit 0) before stills or renders go to the user. `references/compositor.md`,
 "Keeping faces clear", has the method and the rules that came out of it.
@@ -569,6 +597,17 @@ Generated lip-sync takes are the opposite case: each one is placed by measuremen
 its slice was cut at. `sync_offset.py CLIP --save` finds where the take's sound sits in the song and
 refuses a take whose sound is not the song (re-sung or garbled lines happen; that take needs a retake).
 In the edit, a take enters on its line's first word and leaves before any word its slice did not carry.
+
+One sync per take is not enough. `sync_offset.py` also measures the take in 0.5 s windows: generated
+takes often make up their own sound for the first second or two and only then follow the vocal, or hold
+part of a line at an offset of their own after squeezing or stretching a pause (6 of 13 Seedance takes
+on one video started off the vocal, and 3 held a stretch at a second offset). `--save` records the
+stretch that follows the song at the take's sync (`lock`) and any stretch with a sync of its own
+(`also`), and `edl.py` warns about every shot outside them. Inside one sung line, don't cut a drifting
+take into pieces with their own sync: the user saw the cut as the shot changing and the mouth going off.
+`warp_take.py CODE FROM TO` plays the one take at a varying speed so each stretch lands on the song,
+changing speed only in the pauses; on that video's intro line it followed the song at 0.65 against 0.27
+at the best single sync. Place the new clip with the sync it prints and check it with `sync_offset.py`.
 
 When the song is a video's own soundtrack, keep that audio unchanged in the final file: the render
 encodes the song as AAC, so put the original stream back with

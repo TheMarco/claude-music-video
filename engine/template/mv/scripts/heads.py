@@ -21,8 +21,15 @@ Run it once the edit is cut, again after every change to the EDL, and before the
    second); "clear" removes every box; "drop" removes boxes whose top lies below y (a prop read as a head).
 4. Writes mv/data/heads.json and mv/review/heads_NN.jpg: every shot every 0.25 s, with a 0.1 grid and the
    boxes in red. Look at every sheet. A head without a box (seen from behind, small in a wide shot,
-   blurred by motion, half out of frame) gets an "add"; then run again with --rebuild, which skips the
-   render and the detection.
+   blurred by motion, half out of frame, under a helmet or a mask) gets an "add"; then run again with
+   --rebuild, which skips the render and the detection.
+5. Writes mv/review/heads_count.txt, the heads found per frame in every shot, and prints the shots where
+   heads are found on only part of the frames or the count changes inside the shot. Read the counts
+   against who is in each shot: a helmet, a mask or a visor is missed on every frame, so nothing changes
+   and only the count (1 in a two-shot) shows it.
+6. Warns when a clip has changed since the heads were found (a retake replaced it): hand corrections in
+   heads_manual.json over its shots were drawn for the old take, and --rebuild alone keeps the old
+   detection. Run without --rebuild and check those entries.
 
 overlay.py reads heads.json: ov.heads(t), ov.place(...) and ov.touches_face(...). facecheck.py checks
 the finished overlay of every frame against it.
@@ -38,6 +45,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).parent))
+from media import is_gen, src_path  # noqa: E402
 from timing import FPS  # noqa: E402
 
 WORK = Path("mv/work/heads")
@@ -45,6 +53,7 @@ FRAMES = WORK / "frames"
 DETECT = WORK / "detect.jsonl"
 MANUAL = Path("mv/data/heads_manual.json")
 OUT = Path("mv/data/heads.json")
+SOURCES = WORK / "sources.json"   # size and time of every source at the last detection
 MIN_H = 0.03       # smallest head kept, as a fraction of the frame height (crowds far away are left out)
 HOLD = 4           # frames either side a box is held, inside its shot
 
@@ -260,6 +269,54 @@ def sheets(segs, held):
     return (len(want) + PER - 1) // PER
 
 
+def signatures(segs):
+    sig = {}
+    for s in segs:
+        if s["src"] == "BLACK" or is_gen(s["src"]) or s["src"] in sig:
+            continue
+        try:
+            st = src_path(s["src"]).stat()
+        except (KeyError, OSError, StopIteration):
+            continue
+        sig[s["src"]] = [st.st_size, int(st.st_mtime)]
+    return sig
+
+
+def changed_sources(segs, fresh):
+    """Sources that changed since the last detection; on a fresh detection, store the new state."""
+    now = signatures(segs)
+    old = json.loads(SOURCES.read_text()) if SOURCES.exists() else {}
+    if fresh:
+        SOURCES.write_text(json.dumps(now))
+    return sorted(k for k in now if k in old and old[k] != now[k])
+
+
+def count_report(segs, held, shot):
+    """Heads per frame for every shot, to mv/review/heads_count.txt; returns the shots worth a look."""
+    per = {}
+    for n, boxes in held.items():
+        per.setdefault(shot(n), []).append(len(boxes))
+    rows, look = [], []
+    for i in sorted(per):
+        c = per[i]
+        n = len(c)
+        found = sum(1 for v in c if v)
+        top = max(c)
+        at_top = sum(1 for v in c if v == top)
+        s = segs[i]
+        rows.append(f"#{i:<4}{s['src']:<12}{s['start']:8.2f}-{s['start'] + s['dur']:7.2f}s  {n:4d} frames  "
+                    f"a head on {found:4d}  heads per frame: most {top}, on {at_top} frames")
+        if 0 < found < 0.9 * n:
+            look.append(f"#{i} {s['src']} {s['start']:.2f}s: a head on {found} of {n} frames")
+        elif top and 0.2 * n <= at_top <= 0.75 * n:
+            look.append(f"#{i} {s['src']} {s['start']:.2f}s: {top} heads on {at_top} of {n} frames, fewer on the rest")
+    Path("mv/review").mkdir(parents=True, exist_ok=True)
+    Path("mv/review/heads_count.txt").write_text(
+        "Heads found per shot. Check the counts against who is in each shot: a helmet, a mask or a visor is\n"
+        "missed on every frame, and only a count lower than the people in the shot shows it.\n\n" + "\n".join(rows) + "\n")
+    return look
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--size", default="960x540", help="the output's shape at half size: 540x960 for 9:16")
@@ -277,14 +334,29 @@ def main():
             print("no Apple Vision here: finding faces with OpenCV Haar cascades, which miss heads turned away "
                   "or seen from behind; check the sheets closely", flush=True)
             detect_haar()
+    changed = changed_sources(segs, fresh=not args.rebuild)
     held, shot = build(segs)
     n = sheets(segs, held)
+    look = count_report(segs, held, shot)
     empty = sorted({shot(k) for k in held} - {shot(k) for k, v in held.items() if v})
     print(f"{len(held)} frames, {sum(1 for v in held.values() if v)} with a head box -> {OUT}")
     print(f"review: mv/review/heads_00.jpg .. heads_{n - 1:02d}.jpg (every shot every 0.25 s, boxes in red)")
     if empty:
         print("shots with no head box at all (check them for people the detector missed):",
               ", ".join(f"#{i} {segs[i]['src']}" for i in empty))
+    if look:
+        print(f"shots where heads come and go (a head the detector loses part of the time; mv/review/heads_count.txt "
+              f"has every shot):\n  " + "\n  ".join(look[:20]) + (f"\n  ... and {len(look) - 20} more" if len(look) > 20 else ""))
+    if changed:
+        M = json.loads(MANUAL.read_text()) if MANUAL.exists() else {}
+        spans = {src: [(x["start"], x["start"] + x["dur"]) for x in segs if x["src"] == src] for src in changed}
+        print(("these clips changed since the heads were found; run heads.py without --rebuild: " if args.rebuild else
+               "these clips changed since the last run: ") + ", ".join(changed))
+        for kind in ("add", "clear", "drop"):
+            for e in M.get(kind, []):
+                hit = [src for src in changed if any(e[0] < b and e[1] > a for a, b in spans[src])]
+                if hit:
+                    print(f"  heads_manual.json {kind} {e[0]}-{e[1]} lies on {', '.join(hit)}: drawn for the old take, check it")
 
 
 if __name__ == "__main__":
