@@ -7,7 +7,7 @@ engine; a video picks them per line, fills them with the line's own facts, and s
 fonts and accent. Nothing here has a look of its own beyond clean craft: the Style decides.
 
     from devices import Style, Plan, Counter, Gauge, Chart, Poll, Terminal, Chat, Spec, Flap, Stamp, \\
-        Strike, Redact, Progress, Flow, Route, Typed, Tags, Callout, Mark, word
+        Strike, Redact, Progress, Flow, Route, Sticker, Typed, Tags, Callout, Mark, word
 
     STYLE = Style(accent=(255, 92, 64), sans=(F + "...", 0), bold=(...), mono=(...), display=(...))
     PLAN = Plan(STYLE)
@@ -25,7 +25,7 @@ starts moving on t0. A device should stay long enough to read: Plan warns under 
 are a short rise and fade, never a one-frame flash.
 
 Roles and the frame budget (enforced per frame, newest wins): one "hero" (a panel that carries the line),
-at most two "cv" marks (labels on people or points), at most two "micro" rows. Panels are placed with
+at most two "cv" marks (labels on people or points), at most two "micro" rows, at most three stickers. Panels are placed with
 ov.place against the tracked heads and every block placed before them, and inside the 9:16 safe band;
 lay them out once in order of appearance with the video's own blocks (call Plan.draw at every start time
 in the layout pass, like any other block; Plan.starts() lists them).
@@ -45,6 +45,8 @@ Devices (role, what it explains):
   Redact    hero  lines with black bars that wipe on (and can lift later): a secret, a leak
   Flow      hero  boxes joined by arrows that draw on one per beat: a mechanism, a pipeline, cause and effect
   Route     hero  a line that travels between named stops on a map panel: a place, a journey, a supply chain
+  Sticker   own   a thing cut out of the video's own footage, slapped on with a white die-cut edge: the
+                  object a line names, a collection that grows (up to three at once, beside the hero)
   Typed     micro small mono rows typed in: sources, dates, coordinates, a footnote
   Tags      cv    detection labels on the tracked heads: a classifier's (wrong, funny) verdict on people
   Callout   cv    a pulsing point with a leader to a label: name a thing in frame (locked shots)
@@ -64,10 +66,12 @@ from timing import BEAT, beat_at
 
 class Style:
     """Colours and faces shared by every device of a video. Colours are RGB tuples; faces are (path, index)
-    specs for ov.font. dark=True draws dark glass panels with light type; dark=False light paper panels."""
+    specs for ov.font. dark=True draws dark panels with light type; dark=False light paper panels.
+    glass=True makes every panel frosted glass: the compositor blurs and bends the footage under it, and the
+    panel's fill becomes a tint over that (dark enough that its type still passes contrastcheck.py)."""
 
     def __init__(self, accent=(255, 92, 64), dark=True, sans=None, bold=None, mono=None, mono_bold=None,
-                 display=None, panel=None, ink=None, text=None, muted=None, rim=None, radius=18):
+                 display=None, panel=None, ink=None, text=None, muted=None, rim=None, radius=18, glass=False):
         self.accent = tuple(accent)
         self.dark = dark
         self.sans = sans or (FS + "Arial.ttf", 0)
@@ -75,7 +79,9 @@ class Style:
         self.mono = mono or (F + "Menlo.ttc", 0)
         self.mono_bold = mono_bold or (F + "Menlo.ttc", 1)
         self.display = display or self.bold
-        self.panel = panel or ((14, 17, 24, 236) if dark else (244, 242, 236, 242))
+        self.glass = glass   # panels of frosted glass: the footage shows through, blurred and bent at the rim
+        self.panel = panel or (((14, 17, 24, 176) if dark else (244, 242, 236, 190)) if glass
+                               else ((14, 17, 24, 236) if dark else (244, 242, 236, 242)))
         self.text = text or ((244, 246, 250) if dark else (16, 18, 24))
         self.muted = muted or ((150, 158, 176) if dark else (100, 104, 116))
         self.ink = ink or (10, 12, 18)
@@ -881,6 +887,151 @@ class Route(Device):
         return tl
 
 
+class Sticker(Device):
+    """A thing from the video's own footage, cut out and slapped on like a die-cut sticker: a white outline,
+    a soft shadow, a slight tilt. src is a source code and `at` a time in that source (seconds); box is the
+    thing's (x0, y0, x1, y1) in 0..1 of the frame as the shot shows it (read it off a contact sheet). The
+    cut-out is found inside the box (OpenCV GrabCut, no model to fetch) and kept in mv/work/stickers/, so
+    look at the first still: when the cut is wrong, tighten the box, or pass image="file.png", a picture with
+    its own transparency. size is the longer side in 1080p units; label a chip under it. It drops onto the
+    picture in a sixteenth on its beat and holds. Up to three stickers show at once (their own budget), so
+    a line can collect them: add each with its own time and the same end."""
+    role = "sticker"
+    lead = 0.0
+
+    def __init__(self, src=None, at=0.0, box=(0.3, 0.3, 0.7, 0.7), size=300, angle=-6, label=None, outline=10,
+                 image=None):
+        self.src, self.at, self.box, self.px, self.angle = src, at, box, size, angle
+        self.label, self.outline, self.image = label, outline, image
+        self.cut = self._cut()
+        w, h = self.cut.size
+        k = size / max(w, h)
+        pad = outline + 26
+        self.W = w * k * 1.12 + 2 * pad
+        self.H = h * k * 1.12 + 2 * pad + (54 if label else 0)
+        self._made = {}
+
+    def _cut(self):
+        import hashlib
+        import subprocess
+        import numpy as np
+        key = hashlib.md5(repr((self.src, self.at, self.box, self.image)).encode()).hexdigest()[:12]
+        out = Path("mv/work/stickers") / f"{key}.png"
+        if out.exists():
+            return Image.open(out).convert("RGBA")
+        if self.image:
+            im = Image.open(self.image).convert("RGBA")
+            if im.getchannel("A").getextrema()[0] < 250:      # it brings its own transparency
+                im = im.crop(im.getbbox())
+                im.thumbnail((640, 640), Image.LANCZOS)
+                out.parent.mkdir(parents=True, exist_ok=True)
+                im.save(out)
+                return im
+            frame = im.convert("RGB")
+        else:
+            from media import crop_for, is_image, src_path
+            p = src_path(self.src)
+            if is_image(self.src):
+                frame = Image.open(p).convert("RGB")
+            else:
+                raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{self.at:.3f}", "-i", str(p), "-frames:v", "1",
+                                      "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True).stdout
+                if not raw:
+                    raise SystemExit(f"Sticker: no frame at {self.at}s in {self.src}")
+                import io
+                frame = Image.open(io.BytesIO(raw)).convert("RGB")
+            x, y, w, h = crop_for(self.src)
+            fw, fh = frame.size
+            frame = frame.crop((int(x * fw), int(y * fh), int((x + w) * fw), int((y + h) * fh)))
+        import cv2
+        from scipy import ndimage
+        fw, fh = frame.size
+        bx0, by0, bx1, by1 = (self.box[0] * fw, self.box[1] * fh, self.box[2] * fw, self.box[3] * fh)
+        mx, my = (bx1 - bx0) * 0.15, (by1 - by0) * 0.15       # some surroundings, so the cut knows the background
+        rx0, ry0, rx1, ry1 = (int(max(0, bx0 - mx)), int(max(0, by0 - my)), int(min(fw, bx1 + mx)), int(min(fh, by1 + my)))
+        reg = frame.crop((rx0, ry0, rx1, ry1))
+        sc = min(1.0, 560 / max(reg.size))
+        reg_s = reg.resize((max(8, int(reg.size[0] * sc)), max(8, int(reg.size[1] * sc))), Image.LANCZOS)
+        arr = np.asarray(reg_s)[:, :, ::-1].copy()
+        rect = (int((bx0 - rx0) * sc) + 1, int((by0 - ry0) * sc) + 1,
+                max(4, int((bx1 - bx0) * sc) - 2), max(4, int((by1 - by0) * sc) - 2))
+        mask = np.zeros(arr.shape[:2], np.uint8)
+        try:
+            cv2.grabCut(arr, mask, rect, np.zeros((1, 65)), np.zeros((1, 65)), 5, cv2.GC_INIT_WITH_RECT)
+            fg = (mask == 1) | (mask == 3)
+        except cv2.error:
+            fg = np.zeros(arr.shape[:2], bool)
+        lab, n = ndimage.label(fg)
+        if n:
+            sizes = ndimage.sum(fg, lab, range(1, n + 1))
+            fg = ndimage.binary_fill_holes(lab == (1 + int(np.argmax(sizes))))
+        if fg.sum() < 0.08 * rect[2] * rect[3]:               # nothing found: the box itself, rounded
+            fg = np.zeros(arr.shape[:2], bool)
+            fg[rect[1]:rect[1] + rect[3], rect[0]:rect[0] + rect[2]] = True
+            print(f"Sticker: no clear object in the box on {self.src or self.image}; using the box itself")
+        fg = ndimage.binary_opening(fg, iterations=2)
+        a = Image.fromarray((fg * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2))
+        cut = reg_s.convert("RGBA")
+        cut.putalpha(a)
+        cut = cut.crop(cut.getbbox())
+        out.parent.mkdir(parents=True, exist_ok=True)
+        cut.save(out)
+        return cut
+
+    def _sticker(self, ov):
+        """The cut-out at this output's size with its white edge and shadow, made once."""
+        import numpy as np
+        from scipy import ndimage
+        s = ov.s
+        if s not in self._made:
+            k = self.px * s / max(self.cut.size)
+            cut = self.cut.resize((max(2, int(self.cut.size[0] * k)), max(2, int(self.cut.size[1] * k))), Image.LANCZOS)
+            o = self.outline * s
+            pad = int(o + 4)
+            canvas = Image.new("RGBA", (cut.size[0] + 2 * pad, cut.size[1] + 2 * pad), (0, 0, 0, 0))
+            hard = np.zeros((canvas.size[1], canvas.size[0]), bool)
+            hard[pad:pad + cut.size[1], pad:pad + cut.size[0]] = np.asarray(cut.getchannel("A")) > 127
+            edge = np.clip(o + 0.75 - ndimage.distance_transform_edt(~hard), 0, 1)
+            white = Image.new("RGBA", canvas.size, (250, 250, 246, 0))
+            white.putalpha(Image.fromarray((edge * 255).astype(np.uint8)))
+            canvas.alpha_composite(white)
+            canvas.alpha_composite(cut, (pad, pad))
+            self._made[s] = canvas
+        return self._made[s]
+
+    def tile(self, ov, st, t, t0, t1):
+        s = ov.s
+        tl = _tile(self.W * s, self.H * s)
+        b = _beats(t, t0)
+        u = b / 0.25
+        sc = 1.0 + 0.5 * (1 - _ease_out(u)) if u < 1 else 1.0 + 0.04 * math.exp(-(u - 1) * 3)
+        stk = self._sticker(ov).rotate(self.angle + 6 * (1 - _ease_out(u)), resample=Image.BICUBIC, expand=True)
+        if abs(sc - 1) > 1e-3:
+            stk = stk.resize((max(1, int(stk.size[0] * sc)), max(1, int(stk.size[1] * sc))), Image.BICUBIC)
+        if u < 1:
+            stk.putalpha(stk.getchannel("A").point(lambda v: int(v * _ease_out(u * 1.5))))
+        body = (self.H - (54 if self.label else 0)) * s
+        pos = (int((tl.size[0] - stk.size[0]) / 2), int((body - stk.size[1]) / 2))
+        _shadow(tl, stk.getchannel("A"), (pos[0], max(0, pos[1])), 0.55, int(12 * s))
+        tl.alpha_composite(stk, (max(0, pos[0]), max(0, pos[1])))
+        if self.label and b >= 0.5:
+            f = ov.fit(st.mono_bold, 24, self.label, 0, tl.size[0] - 30 * s)
+            tw = f.getlength(self.label) + 24 * s
+            a = _ease_out((b - 0.5) / 0.4)
+            x0, y0 = (tl.size[0] - tw) / 2, body + 2 * s
+            chip = _tile(*tl.size)     # the label is a strip of the same white stock, with its own shadow
+            ImageDraw.Draw(chip).rounded_rectangle((x0, y0, x0 + tw, y0 + 40 * s), int(8 * s), fill=(250, 250, 246, int(255 * a)),
+                                                     outline=_rgba(st.ink, 255 * a), width=max(2, int(3 * s)))
+            _shadow(tl, chip.getchannel("A"), (0, 0), 0.55, int(10 * s))
+            tl.alpha_composite(chip)
+            ImageDraw.Draw(tl).text((tl.size[0] / 2, y0 + 20 * s), self.label, font=f, fill=_rgba(st.ink, 255 * a),
+                                    anchor="mm")
+        return tl
+
+    def panel(self):
+        return False
+
+
 class Redact(Device):
     """Lines of text with black bars over the words wrapped in [brackets]: the bars wipe on one per
     sixteenth; lift=TIME lifts them at that song time (the reveal)."""
@@ -1148,7 +1299,7 @@ class Mark(Device):
 
 class Plan:
     """The devices of a video, with their times and placement, drawn under the frame budget."""
-    BUDGET = {"hero": 1, "cv": 2, "micro": 2}
+    BUDGET = {"hero": 1, "cv": 2, "micro": 2, "sticker": 3}
 
     def __init__(self, style):
         self.style = style
@@ -1216,6 +1367,8 @@ class Plan:
             pos = (int(rect[0]), int(rect[1] + dy))
             if getattr(dev, "panel", lambda: True)():
                 _shadow(img, tl.getchannel("A"), pos, 0.5 * a, int(16 * ov.s))
+                if st.glass:
+                    ov.add_glass((pos[0], pos[1], pos[0] + tl.size[0], pos[1] + tl.size[1]), st.radius * ov.s * k, a, t=t)
             img.alpha_composite(tl, pos)
             taken.append(rect)
             out.append(rect)

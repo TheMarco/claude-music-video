@@ -5,11 +5,13 @@ footage as footage: three are overlays, one is a one-beat accent.
 1. Film light leak that sweeps across the frame on every bar's downbeat (final pass).
 2. Drop accent: one beat of heavy chromatic aberration after each drop, by overriding the engine's ca.
 3. Rim glow: the person's edge lights up warm on each kick (uses the person matte, composite pass).
-4. Embers: sparks rising from the bottom edge, lit by the hi-hats (overlay, front layer).
+4. Embers: sparks rising from under the bottom edge, lit by the hi-hats, as GPU particles (particles.py):
+   each at its own depth, passing behind the person and whatever the depth map says is nearer.
 5. Captions placed clear of every face for their whole time on screen (ov.place, front layer).
-6. Explaining graphics from the device library (devices.py): a counter, a chart, a route, a flow and a
-   hand-drawn mark, laid out with the captions and drawn under the frame budget. A real video picks one
-   per line, filled with the line's facts.
+6. Explaining graphics from the device library (devices.py): a counter, a chart, a route, a flow, a
+   hand-drawn mark and a sticker cut from the footage, on glass panels (Style(glass=True)), laid out with
+   the captions and drawn under the frame budget. A real video picks one per line, filled with the
+   line's facts.
 7. A word whose letters land one after another and thicken as they land (ov.glyphs, ov.stagger, and a
    variable font's weight axis through fonts.face when the face is on disk).
 Depth treatments need no fx.py code: make_depth.py on a clip, then depth_fx="relight" (or "contours",
@@ -21,6 +23,7 @@ import math
 from PIL import ImageDraw  # noqa: F401  (handy for draw_* hooks)
 
 import devices as DV
+import particles as PT
 from overlay import FS
 from timing import BEAT, DROPS, HIT_LEAD
 
@@ -68,13 +71,15 @@ CAPTION_FONT = (FS + "Arial Bold.ttf", 0)
 _laid = False
 
 # 6. explaining graphics: one per line, each for at least ~1.5 s, timed in beats from its start
-PLAN = DV.Plan(DV.Style(accent=(255, 140, 60)))
+PLAN = DV.Plan(DV.Style(accent=(255, 140, 60), glass=True))
 PLAN.add(DV.Counter("FRAMES RENDERED", 576, fmt="{:,.0f}", sub="24 FPS · 24 S"), 12.0, 3.0, prefer=0.3)
 PLAN.add(DV.Chart("LOUDNESS BY BAR", [2, 3, 5, 8, 9, 7], kind="bars", mark="PEAK", per=0.5), 16.0, 3.5, prefer=0.3)
 PLAN.add(DV.Route("THE WAY OUT", ["HOME", "RING ROAD", "COAST"], per=2.0, note="51.92 N  4.48 E  ·  212 KM"),
          4.0, 3.6, prefer=0.3)
 PLAN.add(DV.Flow("HOW A FRAME IS MADE", [("CUT", "ffmpeg"), ("GRADE", "pass 1"), ("TYPE", "pass 2"), ("FINISH", "final")],
                  note="ONE NODE A BEAT"), 20.0, 3.4, prefer=0.3)
+PLAN.add(DV.Sticker("A1", 1.0, (0.35, 0.3, 0.65, 0.75), size=260, label="FROM THE FOOTAGE"), 16.0, 3.5, prefer=0.7,
+         xs=[0.62])
 PLAN.add(DV.Mark((0.72, 0.62), (0.16, 0.2), kind="circle", text="THIS"), 8.5, 2.5)
 PLAN.add(DV.Mark((0.3, 0.6), (0.1, 0.1), kind="arrow", side="left", text="AND THIS"), 9.0, 2.0)
 
@@ -131,19 +136,13 @@ def draw_front(ov, d, t, f, ctx):
             _caption(ov, d, t, i)
     PLAN.draw(ov, d._image, t)
     _landing_word(ov, d, t)
-    # 4. embers rising from the bottom, brightness from the hi-hats
-    if ov.kick_level(t) < 0.3:
-        return
-    heads = ov.heads(t)   # particles count as covering too: none inside a head box
-    for i in range(60):
-        speed = 60 + 140 * ((i * 37) % 11) / 11
-        x = ((i * 0.618034) % 1.0) * ov.w + 30 * ov.s * math.sin(t * 1.3 + i)
-        y = ov.h - ((t * speed * ov.s + i * 97) % (ov.h * 0.8))
-        if any(h[0] <= x <= h[2] and h[1] <= y <= h[3] for h in heads):
-            continue
-        r = (1.5 + (i % 3)) * ov.s
-        a = int((60 + 190 * ov.hat[f]) * (y / ov.h))
-        d.ellipse((x - r, y - r, x + r, y + r), fill=(255, 170, 80, max(0, min(255, a))))
+
+
+# 4. embers: born in a strip under the frame, rising with a little drift, only in the loud sections; the
+# engine draws them at their depth and keeps them off faces
+PARTICLES = [PT.Emitter(count=160, area=(0.0, 1.0, 1.0, 1.06), vel=(0.0, -0.16), spread=(0.03, 0.05), turb=0.03,
+                        life=(3.0, 6.0), size=(3, 8), color=(1.0, 0.66, 0.3), end=(1.0, 0.25, 0.08),
+                        gain=lambda t, a: 0.0 if a.get("kick_level", 0) < 0.3 else 0.5 + 1.2 * a.get("hat", 0))]
 
 
 def draw_behind(ov, img, t, f, ctx):

@@ -21,7 +21,9 @@ their frames are read. Every output frame is then built on the GPU with moderngl
           "shafts": light rays from a point, shadowed by the person), double exposure (over track), the
           shot's depth treatment (depth_fx), echo/trail feedback, glitch; matte (and the behind_depth key)
           in alpha
-  pass 2  overlay: "behind" layer (big words) masked by the person matte, then the "front" layer
+  parts   fx.PARTICLES (particles.py) drawn at their depth in the scene, hidden behind whatever is nearer
+  pass 2  the particles, then the overlay: "behind" layer (big words) masked by the person matte, glass
+          (the picture blurred and bent under the overlay's glass mask), then the "front" layer
   bloom   two-level bloom from the bright pass
   final   punch-in, shockwave, chromatic aberration, sharpening, bloom/halation, star glints, flash, fx.py's
           final shader, vignette, scanlines, film grain, fade
@@ -50,6 +52,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 from media import GEN_IDS, crop_for, depth_path, is_ai, is_gen, is_image, matte_path, seg_size, src_path  # noqa: E402
 import fx  # noqa: E402
+import particles  # noqa: E402
 import screen  # noqa: E402
 from look import FINISH, GRADES, PALETTES, SHADOW_TINT  # noqa: E402
 from overlay import Overlay  # noqa: E402
@@ -99,7 +102,9 @@ uniform vec3 dCol;
 uniform vec4 xfA, xfB, xfC;          // zoom, offx, offy, rot
 uniform vec4 gA1, gA2, gB1, gB2, gC1, gC2;  // (gm,pal,sat,con) (lift,expo,mirror,kal)
 uniform float mixAB, opC, blendC, echo, trail, glitch, time, kalRot, genA, genB, genC, kick, loud;
-in vec2 uv; out vec4 o;
+in vec2 uv;
+layout(location = 0) out vec4 o;
+layout(location = 1) out vec4 o2;   // depth, person matte, has-depth: what the particle pass hides behind
 float DEPTH = 0.0;   // depth at this pixel (0 far .. 1 near) on shots with a depth map; fxComp may read it
 """ + COMMON + """
 vec3 pal(float l, float id){
@@ -280,6 +285,7 @@ void main(){
   if (trail > 0.0) col = max(col, prev*trail);
   float key = dBehind > 0.0 && max(hasDA, hasDB) > 0.5 ? smoothstep(dBehind - 0.04, dBehind + 0.04, DEPTH) : 0.0;
   o = vec4(col, max(matte, key));   // behind-layer type tucks behind the person and anything nearer than dBehind
+  o2 = vec4(DEPTH, matte, max(hasDA, hasDB), 1.0);
 }
 """
 
@@ -310,17 +316,39 @@ P1 = P1.replace("PALETTE_CODE", _palette_glsl()).replace("void main(){", _fx_gls
 
 P2 = """
 #version 330
-uniform sampler2D tBase, tOver, tBehind;
-uniform float overGain, hasOver, hasBehind, letterbox;
+uniform sampler2D tBase, tOver, tBehind, tGlass, tPart;
+uniform float overGain, hasOver, hasBehind, hasGlass, hasPart, letterbox;
 in vec2 uv; out vec4 o;
 void main(){
   vec4 bs = texture(tBase, uv);
   vec3 c = bs.rgb;
+  if (hasPart > 0.5){ vec4 pt = texture(tPart, uv); c = c*(1.0 - pt.a) + pt.rgb; }
   float bar = 0.5*letterbox*(1.0-(ASP_VALUE)/2.39);
   if (uv.y < bar || uv.y > 1.0-bar) c = vec3(0.0);
   if (hasBehind > 0.5){
     vec4 t = texture(tBehind, vec2(uv.x, 1.0-uv.y));
     c = mix(c, t.rgb, t.a*(1.0 - smoothstep(0.3, 0.6, bs.a)));
+  }
+  if (hasGlass > 0.5){   // glass: under the overlay's glass mask the picture is frosted, and bent at the rim
+    vec2 guv = vec2(uv.x, 1.0-uv.y);
+    float g = texture(tGlass, guv).r;
+    if (g > 0.004){
+      vec2 e = 5.0/OUT_RES;
+      vec2 grad = vec2(texture(tGlass, guv + vec2(e.x, 0.0)).r - texture(tGlass, guv - vec2(e.x, 0.0)).r,
+                       texture(tGlass, guv - vec2(0.0, e.y)).r - texture(tGlass, guv + vec2(0.0, e.y)).r);
+      vec2 q = uv + grad*0.02;
+      float rot = fract(sin(dot(uv*OUT_RES, vec2(12.9898, 78.233)))*43758.5453)*6.2831853;
+      vec3 acc = vec3(0.0);
+      for (int i = 0; i < 32; i++){
+        float r = sqrt((float(i) + 0.5)/32.0)*0.016, th = float(i)*2.39996323 + rot;
+        vec2 s = q + vec2(cos(th)/(ASP_VALUE), sin(th))*r;
+        acc += texture(tBase, s).rgb;
+      }
+      acc /= 32.0;
+      float l = dot(acc, vec3(.299,.587,.114));
+      acc = mix(vec3(l), acc, 1.45)*0.94 + 0.05 + 0.35*length(grad);   // richer colour, a little milk, a lit rim
+      c = mix(c, max(acc, 0.0), g);
+    }
   }
   if (hasOver > 0.5){
     vec4 t = texture(tOver, vec2(uv.x, 1.0-uv.y));
@@ -642,7 +670,8 @@ def main():
     k = 1080.0 / min(W, H)
     global P1, P2, FINAL
     P1 = P1.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}")
-    P2 = P2.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}")
+    P2 = (P2.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}")
+          .replace("OUT_RES", f"vec2({W:.1f}, {H:.1f})"))
     FINAL = (FINAL.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}").replace("GRAIN_RES", f"vec2({W * k:.1f}, {H * k:.1f})")
              .replace("SCAN_RES", f"{H * k:.1f}").replace("OUT_RES", f"vec2({W:.1f}, {H:.1f})"))
     edl = json.loads((ROOT / "data" / "edl.json").read_text())
@@ -696,6 +725,13 @@ def main():
     pbr, vbr = prog(BRIGHT)
     pbl, vbl = prog(BLUR)
     pfi, vfi = prog(FINAL)
+    # particles: one quad per particle, instanced
+    ppt = ctx.program(vertex_shader=particles.VERT.replace("ASP_VALUE", f"{out_asp:.6f}"),
+                      fragment_shader=particles.FRAG)
+    pt_cap = 20000
+    pt_buf = ctx.buffer(reserve=pt_cap * 44, dynamic=True)
+    vpt = ctx.vertex_array(ppt, [(quad, "2f", "corner"), (pt_buf, "4f 4f 3f /i", "pz", "pcol", "pdir")])
+    emitters = None if args.clean else getattr(fx, "PARTICLES", None)
 
     def tex(w, h, comps=3, dtype="f1"):
         t = ctx.texture((w, h), comps, dtype=dtype)
@@ -705,6 +741,10 @@ def main():
     tA, tB, tC = tex(SW, SH), tex(SW, SH), tex(SW, SH)
     tOver = tex(W, H, 4)
     tBehind = tex(W, H, 4)
+    tGlass = tex(W, H, 1)
+    tAux = tex(W, H, 4)
+    tPart = tex(W, H, 4, "f2")
+    fpart = ctx.framebuffer([tPart])
     tMA, tMB = tex(SW, SH, 1), tex(SW, SH, 1)
     tDA, tDB = tex(SW, SH, 1), tex(SW, SH, 1)
     feats = np.load(ROOT / "data" / "audio_feats.npz")
@@ -717,7 +757,7 @@ def main():
                 if k in pr:
                     pr[k] = tuple(v) if isinstance(v, (tuple, list)) else float(v)
     base = [tex(W, H, 4, "f2"), tex(W, H, 4, "f2")]
-    fbase = [ctx.framebuffer([b]) for b in base]
+    fbase = [ctx.framebuffer([b, tAux]) for b in base]
     comp = tex(W, H, 4, "f2")
     fcomp = ctx.framebuffer([comp])
     bw, bh = W // 4, H // 4
@@ -897,10 +937,35 @@ def main():
         fbase[ping].use()
         v1.render(moderngl.TRIANGLE_STRIP)
 
+        # particles (fx.PARTICLES): at their depth in the scene, hidden behind whatever pass 1 says is nearer
+        pts = None
+        if emitters:
+            pts, person = particles.frame(emitters, t, fxa, out_asp, ov.heads(t), (W, H))
+        if pts is not None and len(pts):
+            pts = pts[:pt_cap]
+            pt_buf.write(np.ascontiguousarray(pts).tobytes())
+            fpart.use()
+            ctx.clear(0, 0, 0, 0)
+            ctx.enable(moderngl.BLEND)
+            ctx.blend_func = (moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA)
+            ppt["tAux"] = 0
+            tAux.use(0)
+            ppt["res"] = (float(W), float(H))
+            ppt["person"] = person
+            vpt.render(moderngl.TRIANGLE_STRIP, instances=len(pts))
+            ctx.disable(moderngl.BLEND)
+
         # pass 2: text (the EDL's end-card tail is BLACK, so fx.py can draw the end card in any pass)
         ob, o = (None, None) if args.clean else ov.frame(
             t, {"src": seg["src"], "local": local, "dur": seg["dur"], "label": seg.get("label")})
-        p2["tBase"], p2["tOver"], p2["tBehind"] = 0, 1, 2
+        og = None if args.clean else ov.glass_arr
+        p2["tBase"], p2["tOver"], p2["tBehind"], p2["tGlass"], p2["tPart"] = 0, 1, 2, 3, 4
+        if og is not None:
+            tGlass.write(og.tobytes())
+            tGlass.use(3)
+        tPart.use(4)
+        p2["hasGlass"] = 1.0 if og is not None else 0.0
+        p2["hasPart"] = 1.0 if pts is not None and len(pts) else 0.0
         base[ping].use(0)
         if o is not None:
             tOver.write(o.tobytes())

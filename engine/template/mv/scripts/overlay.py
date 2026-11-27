@@ -36,6 +36,14 @@ Faces (mv/data/heads.json from heads.py; without it these see no faces and say s
   ov.backdrop(rect, t)                            the bare picture under rect at t (heads.py's clean
                                                   frames): {"mean", "low", "high"} relative luminance
                                                   (mean, 10th, 90th percentile), or None without them
+Glass (the compositor frosts and bends the picture wherever this frame's glass mask is set, under the
+front layer; devices do it for their panels with Style(glass=True)):
+  ov.add_glass(rect, radius, amount=1.0, t=t)     a rounded rect of glass (px), for a card of your own:
+                                                  draw the card over it with a fill alpha of about 0.7.
+                                                  Pass the time you are drawing for: a layout pass that
+                                                  draws other times on a scratch image then adds nothing
+  ov.glass_draw()                                 an ImageDraw on the frame's glass mask (mode L), to draw
+                                                  any shape or a word of glass: text(..., fill=255)
 Module helpers: hash01(*key) for stable per-frame randomness, keyframes(t, [(t, v), ...]), and F / FS,
 the macOS system font folders.
 """
@@ -354,13 +362,29 @@ class Overlay:
         return {"mean": float(sub.mean()), "low": float(np.percentile(sub, 10)), "high": float(np.percentile(sub, 90))}
 
     # ---- main -------------------------------------------------------------
+    def glass_draw(self):
+        """An ImageDraw on this frame's glass mask (L, frame size): 255 is full glass."""
+        if self._glass is None:
+            self._glass = Image.new("L", (self.w, self.h), 0)
+        return ImageDraw.Draw(self._glass)
+
+    def add_glass(self, rect, radius=0, amount=1.0, t=None):
+        if t is not None and abs(t - self._frame_t) > 1e-6:
+            return   # a layout pass drawing another time on a scratch image: not this frame's glass
+        if amount > 0.004:
+            self.glass_draw().rounded_rectangle(tuple(int(v) for v in rect), int(radius), fill=int(255 * min(amount, 1.0)))
+
+    _glass, glass_arr, _frame_t = None, None, -1.0
+
     def frame(self, t, ctx=None):
         ctx = ctx or {}
         f = self.fi(t)
+        self._glass, self._frame_t = None, t
         behind = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
         self.fx.draw_behind(self, behind, t, f, ctx)
         front = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
         self.fx.draw_front(self, ImageDraw.Draw(front), t, f, ctx)
         b = np.asarray(behind) if behind.getbbox() else None
         fr = np.asarray(front) if front.getbbox() else None
+        self.glass_arr = np.asarray(self._glass) if self._glass is not None and self._glass.getbbox() else None
         return b, fr

@@ -10,7 +10,8 @@ It builds a throwaway project (a 24 s song at 120 BPM with a quiet intro, two te
 runs conform --check, analyze_song, gridcheck, audio_feats, edl (an edit generated on the grid, with a dissolve and a
 double exposure, a shot with light shafts and one with a focus pull), contact --edl, render --stills (once with the empty fx.py, once with
 examples/fx_examples.py), sheet, a full render, beatsheet, qc, heads, facecheck and contrastcheck (with
-the empty fx.py and with the examples), readcheck and the font list, a vertical bar-locked part, a tracked screen (screen.py on a
+the empty fx.py and with the examples: glass panels, GPU particles and a sticker cut from the footage
+included), readcheck and the font list, a vertical bar-locked part, a tracked screen (screen.py on a
 clip with a dark panel moving through it, then a still with the panel filled), and concept_dice. It checks that every step exits cleanly and writes what it should, that the analyzer
 finds the tempo, and that the render is as long as the song. It does not test lyrics transcription or
 person mattes or depth maps (all three download large models; the depth treatments still compile and run

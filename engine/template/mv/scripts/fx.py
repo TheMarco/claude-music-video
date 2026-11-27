@@ -25,6 +25,8 @@ draw_front(ov, d, t, f, ctx)    draws over everything with the PIL ImageDraw d.
 SCREENS       {name: fn(t, shot)}: the picture a tracked screen in the footage shows at song time t (RGB
               numpy array or PIL image), for shots with screen="name" in edl.py (screen.py;
               screen.led_panel draws LED dot-matrix text).
+PARTICLES     a list of particles.Emitter (or a function (t, a) -> list): embers, snow, dust, sparks drawn on
+              the GPU at a depth in the scene, behind whatever is nearer, under every graphic (particles.py).
               ov is the Overlay (overlay.py lists its helpers: fonts, fit, tracked text, layers, lyric
               timing, audio arrays indexed by frame f, kick and snare onsets). ctx has the shot's src,
               label, local time and duration.
