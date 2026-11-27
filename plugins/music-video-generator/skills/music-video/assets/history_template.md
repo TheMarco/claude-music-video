@@ -18,9 +18,10 @@ entries.
 ## Title (Artist), Month Year
 Project: path, BPM and genre, footage mix. Frames: refs/<title>.jpg
 - brief: the user's mood and look words
-- look: palette, grade, finish
+- look: palette, grade, finish; the colour pattern (restrained, committed, full palette or drenched;
+  ground, hue family, accent temperature)
 - edit: cut count, pace, devices
-- type: title, artist and word treatments, fonts
+- type: title, artist and word treatments; the faces by name and what in the song's world they came from
 - graphics: overlays and graphic elements
 - signature: the effects that made this video recognizable
 -->

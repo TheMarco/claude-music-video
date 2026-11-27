@@ -187,6 +187,38 @@ only when the user asks for it, and work the way they choose:
   open. Submit one test take, let the user judge it, then the batch. Keep a per-take log of what was
   submitted, so a failed or refunded job is retried once and never double-submitted.
 
+## Blender through an MCP (local, free)
+
+When the user has Blender open with an MCP connected to it (for example github.com/ahujasid/mcp-for-blender:
+an addon in Blender plus a local MCP server), it is a footage source that costs nothing and gives exact
+control of the camera: a set plate with a blank dark screen for `screen.py`, an object the lyric names
+turning in space, an abstract background for a visualizer. Use it only when it is connected and the
+user wants it; it suits hard surfaces, type as objects and abstract forms, not people.
+
+1. Ask the MCP for its status and its scripting guide before anything else; everything below goes
+   through its tool that runs Python in Blender.
+2. Block the scene and the camera, look at it through the MCP's viewport or camera look tool, and fix
+   it before lighting. Light with one environment (Poly Haven's are CC0 and need no account) and one
+   key. Other asset libraries the MCP offers may need the user's own account or a credit on the end
+   card: ask before using them, and record every credit.
+3. Animate the camera or one parent object with two or three keyframes: one smooth move, as for any
+   clip a screen is tracked in.
+4. Set the render: the output size (1920x1080, or 1080x1920 for a vertical video), 24 fps, frames 1 to
+   seconds times 24, PNG frames into `mv/blender/<CODE>/f_####.png`, the view transform on Standard when
+   the colours have to match the palette. Read the render engine's name from the scene instead of
+   assuming one; it differs between Blender versions. Save the `.blend` into `mv/blender/`.
+5. Render one frame through the MCP and look at it. Render the animation from a shell in the
+   background (`blender -b mv/blender/<CODE>.blend -a`), never through the MCP: its calls time out
+   after about three minutes while the render goes on.
+6. Make the clip: `ffmpeg -framerate 24 -i mv/blender/<CODE>/f_%04d.png -c:v libx264 -crf 14 -pix_fmt
+   yuv420p mv/clips/<CODE>.mp4`, then treat it like any clip (matte, depth, screen track, grade).
+
+A render is footage: it gets the video's grade, grain and finish like every other shot, and it fills
+the frame. Bevelled chrome letters on a dark floor are this route's reflex; give the object the
+concept's own material and light. The engine composites clips as full-frame shots or on the OVER
+track; it has no keyed-element layer, so render objects on a ground that suits a screen or add blend
+(black) when they go over other footage.
+
 ## Example: Dreamina (web app)
 
 Notes from one video in November 2026 (Seedance 2.5, 720p, 43 clips); check the app for current

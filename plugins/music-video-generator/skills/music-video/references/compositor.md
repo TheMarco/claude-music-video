@@ -11,6 +11,7 @@
 - Graphics and text (fx.py drawing)
 - Keeping faces clear
 - Contrast
+- Reading
 - Explaining graphics (devices.py)
 - Shaders and uniforms (fx.py)
 - Depth (make_depth.py)
@@ -43,7 +44,7 @@ graphic, title and overlay is designed per video in `look.py` and `fx.py`.
 3. **Pass 2.** Letterbox bars (if `look.py` asks for them), then the `behind` layer where the person
    matte is empty, then the `front` layer over everything. Both layers come from `fx.py`.
 4. **Bloom.** Bright pass, then two blur levels.
-5. **Final.** Punch-in, shockwave, chromatic aberration, bloom and halation, star glints, flash, invert,
+5. **Final.** Punch-in, shockwave, chromatic aberration, sharpening, bloom and halation, star glints, flash, invert,
    `fxFinal`, vignette, scanlines, film grain, fade-in. The amounts come from `FINISH` in `look.py`.
 
 Output is H.264 CRF 19 `-preset slow` with the song as AAC 320k. `--stills` renders JPEG frames
@@ -84,6 +85,10 @@ All are documented in `edl.py`. Typical uses:
 - OVER track at `op=0.3-0.45`: one film over another.
 - `depth_fx="relight"`, `"contours"`, `"scan"` or `"haze"` with `depth_rate`, `depth_amt`, `depth_col`, and
   `behind_depth=0.6` on shots with a depth map ("Depth").
+- `depth_fx="focus"` with `depth_focus`: depth of field on a shot with a depth map, the person kept
+  sharp; `depth_focus=(0.95, 0.15)` pulls focus from near to far across the shot ("Depth").
+- `depth_fx="shafts"` with `depth_at=(x, y)`: light rays from that point, the person cutting a shadow
+  through them; needs no depth map ("Depth").
 - `screen="NAME"` fills a tracked screen in the shot with `fx.SCREENS["NAME"]` ("Screens in the shot").
 - Any other keyword is passed through to `fx.py` as `a["shot"]["name"]`, so a concept can add its own
   per-shot controls.
@@ -155,6 +160,7 @@ These are facts about the song. Nothing happens at a drop or countdown unless `l
   | `punch` | punch-in zoom times the beat pulse (per shot `punch=` scales it) |
   | `vignette` | (normal, calm sections and intro) |
   | `letterbox` | list of (start, end) spans with 2.39 bars on wide output; `LETTERBOX` is the analyzer's pick |
+  | `sharpen` | contrast-adaptive sharpening of the finished frame, 0..1. Segments are 720p scaled up to the output; 0.3-0.5 brings the detail back without ringing, and it backs off on edges that already clip. Off in every start: turn it on when stills look soft next to the type. |
   | `drop_flash`, `shock` | white flash and shockwave on the song's drops and shocks |
 
   Anything the table can't express goes in `fx.uniforms()`, which can return any engine uniform and
@@ -178,8 +184,10 @@ behind the performer. `d` is a PIL ImageDraw on the front layer, over everything
 `src`, `label`, `local` time and `dur`. Nothing is drawn unless `fx.py` draws it: titles, artist name,
 credits, words, captions and graphics are all part of the concept.
 
-`ov` helpers (listed in `overlay.py`): `w`, `h`, `s` (short side / 1080), `wide`, `font(spec, size)`,
-`fit(spec, size, text, track, maxw)`, `tracked(...)` for letter-spaced text, `layer(canvas, fill, mask,
+`ov` helpers (listed in `overlay.py`): `w`, `h`, `s` (short side / 1080), `wide`, `font(spec, size,
+axes=None)`, `fit(spec, size, text, track, maxw)`, `tracked(...)` for letter-spaced text, `glyphs(text,
+font, xy, track, anchor)` for each letter's own position and `stagger(i, n, u, lag)` for each letter's
+own progress, `layer(canvas, fill, mask,
 alpha)` to composite a color or image through a mask, `gradient(top, bottom)`, `kick_level(t)`,
 `letterboxed(t)`, `lyric_at(t)`, and the audio arrays. Module helpers: `hash01(*key)` for stable random
 values per frame, `keyframes(t, pts)`, and the font folders `F` and `FS`.
@@ -188,6 +196,23 @@ Techniques that work in any video (mechanics, not looks): draw text into an L ma
 with `ov.layer` for gradients and textures inside letters; a blurred dark copy behind text holds it on
 bright shots; gate overlays with `ov.kick_level(t)` so calm sections stay clean; keep letterbox-bar text
 inside the bar spans from `look.py`.
+
+**Letters one at a time.** A word that acts out its meaning usually moves letter by letter:
+`ov.glyphs` gives every letter's place as `ov.tracked` would draw it, and `ov.stagger(i, n, u, lag)`
+turns the whole move's progress `u` into letter i's own (lag 0.2 for a ripple, 0.5-1 for one after
+another). Draw each letter with its own offset, size, colour or alpha. With a variable face
+(`fonts.py` lists their axes), `ov.font(spec, size, axes={"wght": 200 + 700 * e})` makes a letter
+thicken as it lands, or a held word widen with the note; `examples/fx_examples.py` (example 7) does
+both. Place the word once for its full footprint with `ov.place` and move the letters inside it.
+
+**Timing a move.** A move that has to be there on a hit starts before it and has settled on the hit's
+frame: start a slide or a rise 0.15-0.25 s early (device panels do this themselves, their `lead`), and
+put the hit on the frame where the move lands, not where it starts. A reaction (a word answering
+what was just sung, a stamp on a verdict) lands on the hit with no ease in. Once type has landed it
+holds dead still; what keeps a held word alive is one slow change tied to the music (the weight with
+the note, a glow with the vocal), not a drift or a pulse. An exit takes about two thirds of the
+entrance and never draws attention. Any one treatment goes stale after about six seconds: change
+what it is doing, or take it off.
 
 ## Keeping faces clear
 
@@ -272,6 +297,26 @@ What fixed a slopcore video that failed it 151 times:
 percentile), for choosing a treatment per shot: dark type on a bright sky, a stronger shadow on a busy
 shot, a darker part of the frame.
 
+Colour inside the type follows the picture too. Small type and card text take a tint of the palette
+stop they sit over, never a neutral grey or white at 60%: grey on a coloured picture reads as dirt.
+One ink for the type (a near-white or near-black tinted toward the grade) and one accent, the accent
+on a few percent of the frame unless the concept's colour pattern says otherwise. In the 5-stop
+palettes keep the first and last stops low in chroma and let the colour peak in stops 2-4: saturated
+blacks and whites read as a filter.
+
+## Reading
+
+`readcheck.py --size <output size>` draws the front layer of every sampled frame, splits it into
+elements the way the contrast check does, and follows each one through the video. It lists type up for
+less than its reading time (0.4 s for one or two words, otherwise three quarters of 0.5 s plus 0.3 s
+a word; words are estimated from the line's shape), cards up under 1.2 s, lines lower than 2% of the
+frame's short side for half a second or more (about a 28 px font at 1080; `--fine-print` drops the
+floor to 1.3% for slopcore's edges, `--floor` sets it), and elements inside the edge margin for half
+a second or more: 4% at the sides and 5% top and bottom, 8% at the top and 14% at the bottom of
+vertical output. Each case is drawn into `mv/review/read_NN.jpg` at 360 px wide, the size a phone
+shows it. It exits 0 unless `--strict` is given: marks and large particles are elements too, and a
+one-word hit can be short on purpose. Specks under about 250 px of ink at 1080p are ignored.
+
 ## Explaining graphics (devices.py)
 
 The engine's library of explaining graphics (references/effects-ideas.md, "What makes an effect land"):
@@ -309,19 +354,31 @@ and returns the rects it took. Lay it out with the video's own blocks: in the la
 | `Stamp` | hero | a verdict slammed on the beat | text, angle, color, sub |
 | `Strike` | hero | before and after, a price drop, a downgrade | label, old, new, under |
 | `Redact` | hero | a secret; a reveal later | label, lines with [hidden] words, lift (time) |
+| `Flow` | hero | a mechanism, a pipeline, cause and effect | label, nodes (text or (title, sub), 2-5), per (beats a node), active, note |
+| `Route` | hero | a place, a journey, a supply chain | label, stops (names, or (name, (x, y)) in 0..1 of the map), per (beats a leg), note |
 | `Typed` | micro | sources, dates, coordinates, a footnote | rows (up to 3) |
 | `Tags` | cv | a classifier's verdict on the people in frame | label(i, box) -> text or None |
 | `Callout` | cv | a named thing in frame (locked shots) | xy (0..1), text, rows |
+| `Mark` | cv | this one, here: a hand-drawn circle, box, underline or arrow round a thing in frame (locked shots) | xy, size (0..1), kind, text, beats, side (arrow) |
 
 The budget per frame is one hero, two cv marks and two micro rows; when more are on, the newest wins.
 Every device animates in beats from its start (`timing.beat_at`) and rises in and fades out; give each at
-least about 1.5 s (Plan warns under 1.2 s). Panels are dark glass with a lighter rim (or light paper with
+least about 1.5 s (Plan warns under 1.2 s). A panel starts rising 0.2 s before its time and has settled
+when the word is sung, and what it shows starts moving on the word; `Plan.add(..., lead=0)` puts the
+rise after the time instead (a `Stamp` and `Typed` rows have no lead). `Flow`, `Route` and `Mark` draw
+themselves: the outline first, the fill after it, the label last, one element a beat, the whole
+drawing done in two to four beats and then held. `Route` runs a pulse of light along the finished
+line every two bars; `Mark` holds with a slow boil, the same line redrawn three ways and changed every
+third frame, and is taken back from its start as it leaves. Panels are dark glass with a lighter rim (or light paper with
 `dark=False`), which `contrastcheck.py` accepts on any shot. `Tags` draws a box round a lone head and, in
 a group, a chip with a leader line above each head, so nothing lands inside a head box even where the
 detector merged two heads; `Callout` drops its leader where it would cross a face.
 
 A new device subclasses `Device`: set `role`, `W`, `H` (1080p units) and write `tile(ov, st, t, t0, t1)`
-returning an RGBA image of that size (`_panel` draws the shared panel and header), or, for marks
+returning an RGBA image of that size (`_panel` draws the shared panel and header; `_stroke(img, pts, a,
+b, width, fill)` draws the part of a polyline between the fractions a and b of its length, antialiased,
+and returns its moving end and direction for a dot or an arrowhead: every line that should draw
+itself goes through it), or, for marks
 anchored to the frame, `draw_frame(ov, st, img, t, t0, t1, avoid)`. Keep it in the video's `fx.py`; a
 device that more than one video would use belongs in the engine.
 
@@ -366,13 +423,25 @@ Per shot in `edl.py`:
 - `depth_fx="haze"`: air by depth, lifting a little on the kick. Calm sections, golden hour.
 - `depth_rate` beats per cycle (default 1, from the shot's cut), `depth_amt` strength (defaults 0.85,
   0.9, 0.8, 0.45), `depth_col` an RGB colour 0..1.
+- `depth_fx="focus"`: depth of field. Everything away from `depth_focus` (0 far to 1 near, default
+  0.9) falls into lens blur with lights opening into discs, and the person matte stays sharp at any
+  depth. `depth_focus=(0.95, 0.15)` pulls focus across the shot, from the balcony in front to the city
+  behind it; `depth_amt` (default 1.8) is how fast blur grows with distance from the focus depth. A
+  focus pull on a wide is a move of its own, one or two a video; a fixed focus on a performer shot
+  separates them from a busy background. It costs 32 samples a pixel on those shots only.
+- `depth_fx="shafts"`: light rays fanning from `depth_at=(x, y)` (frame coordinates, y down; default
+  top centre), gathered from the bright parts of the picture and tinted `depth_col`, swelling a little
+  on the kick. Where the person stands between a pixel and the light they cut a shadow through the
+  rays. It needs no depth map, only bright sources near `depth_at` (a window, a stage light, a sign);
+  put the point on the light in the shot. `depth_amt` default 0.8.
 - `behind_depth=0.6`: the `behind` layer tucks behind anything nearer than 0.6 (a tower, a rope, a
   crowd), not only the person matte. Place the block so an edge tucks; a word that mostly disappears
   doesn't read.
 
 A treatment is the footage's medium, chosen from the story (references/effects-ideas.md): rotate them,
 never the same one on neighbouring shots, and leave most shots untreated, so each one lands. `fx.py`
-can override `dTreat`, `dPhase`, `dAmt`, `dCol` and `dBehind` from `uniforms()` per frame.
+can override `dTreat`, `dPhase`, `dAmt`, `dCol`, `dBehind`, `dFocus` and `dPos` (uv, y up) from
+`uniforms()` per frame.
 
 ## Screens in the shot (screen.py)
 
@@ -434,7 +503,19 @@ How the words look and move is designed per video.
 ## Fonts
 
 Font specs are `(path, ttc_index)`. Any `.ttf`, `.otf` or `.ttc` path works, including fonts shipped
-with the project. When a path doesn't exist (an `fx.py` written on macOS rendering on Linux),
+with the project.
+
+**Faces for the video (`fonts.py`).** `.venv/bin/python mv/scripts/fonts.py` lists about thirty openly
+licensed faces (SIL Open Font License, free for released and commercial videos) by what they come from:
+poster and woodtype capitals, slabs, a blackletter, deco and script display faces, wide and narrow
+variable grotesques, four monos. `fonts.py --sheet mv/review/fonts.jpg "WORDS FROM THE SONG"` sets
+the song's own words in each. In `fx.py`, `from fonts import face` and `DISPLAY = face("Besley")` give
+a spec for `ov.font`; the file is fetched once from the public google/fonts repository at a pinned
+commit, with a plain anonymous request and a pinned checksum, into `~/.cache/music-video/fonts/` with
+its license text. `face("ofl/<folder>/<File>.ttf")` fetches any other OFL family there. Variable faces
+take axes: `ov.font(DISPLAY, 120, axes={"wght": 800, "wdth": 75})`. Choose from the song's world
+(SKILL.md Phase 3, "The face") and write the face into the history entry. These render the same on
+every system; the system fonts below are the fallback. When a path doesn't exist (an `fx.py` written on macOS rendering on Linux),
 `overlay.font_path` looks for the same file name in the system font folders, then falls back to DejaVu
 Sans, Arial or Helvetica. On macOS:
 
