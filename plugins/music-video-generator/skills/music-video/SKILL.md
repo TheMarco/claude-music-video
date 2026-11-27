@@ -30,7 +30,7 @@ user installs them once per engine version into `~/.claude/music-video/engine/<c
 
 ```bash
 SKILL="<base directory>"
-ENGINE_REV=56021acadc15c50ddfccfe181f4cca82e27b777d
+ENGINE_REV=eb54b0f4a219a4eb763bda804367d085b7626c8c
 ENGINE="$HOME/.claude/music-video/engine/$ENGINE_REV"
 ```
 
@@ -38,7 +38,7 @@ Shell variables don't carry over from one command to the next. Start every comma
 `$ENGINE` or `$ENGINE_REV` with these three lines.
 
 **Check for the engine before anything else:** `test -f "$ENGINE/template/mv/scripts/render.py"`. When
-it is missing, stop. Tell the user this skill needs engine version `56021ac`, give them
+it is missing, stop. Tell the user this skill needs engine version `eb54b0f`, give them
 https://github.com/TheMarco/claude-music-video#install-the-engine, and wait for them to say it is
 installed. They run those steps themselves: don't download or install the engine for them, and don't
 fall back to an older engine folder that happens to be there. Then check again and go on. The template in it (`$ENGINE/template/mv/scripts/`) is a working pipeline. Copy it
@@ -216,9 +216,9 @@ Windows the venv's Python is `.venv\Scripts\python`. Lyrics transcription uses m
 Silicon (installed by the requirements); elsewhere `pip install openai-whisper`. `models.py` downloads
 the Whisper, person-matte and depth models on first use with plain anonymous requests and pinned
 checksums; keep model downloads in `models.py` rather than the libraries' own downloaders. Fonts are
-picked per video in `fx.py`; `F` and `FS` in `overlay.py` point at the macOS system font folders, and on
-other systems any `.ttf` or `.otf` path works (`references/compositor.md`, "Fonts"). Run every script
-from the project root.
+picked per video in `fx.py`: `fonts.py` fetches openly licensed display and mono faces (the same on
+every system), `F` and `FS` in `overlay.py` point at the macOS system font folders, and any `.ttf` or
+`.otf` path works (`references/compositor.md`, "Fonts"). Run every script from the project root.
 
 ### Updating a project's engine
 
@@ -237,7 +237,9 @@ moments with both and compare before changing anything else. A project from befo
 `devices.py` and `make_depth.py` and needs no change to keep rendering as before; one that patched
 `render.py` and `media.py` for vertical footage sets `SEG_SIZE` in its `look.py` instead. A project
 from before engine 56021ac gains `screen.py` and renders as before; one that baked a screen into copies of
-a clip can drop those copies and use `screen=` in `edl.py` with `SCREENS` in `fx.py`.
+a clip can drop those copies and use `screen=` in `edl.py` with `SCREENS` in `fx.py`. A project from
+before engine eb54b0f gains `fonts.py`, `readcheck.py` and `particles.py`, and its device panels now start rising 0.2 s
+before their time so they have settled on the word: check stills where a panel sits close to a cut.
 
 ## Phase 2: the song
 
@@ -339,7 +341,8 @@ lines returns unless the user asks.
    draws random overlay ideas; use the ones that serve the brief and drop the rest.
 4. **Write three concepts**, three different identities inside the same brief. For each: one or two
    sentences on what a viewer sees and feels at the drop (light, color, what fills the frame, what
-   moves); the look (palette, finish start); title and credits; type, or none; 3-6 signature overlays,
+   moves); the look (palette, finish start, and its colour pattern, below); title and credits; type, or
+   none, with the face and where it comes from (below); 3-6 signature overlays,
    at least half new code, building toward the drop or last chorus; the explaining layer (one graphic
    per line from the questions in `references/effects-ideas.md`, "One explaining graphic per line", most
    of them devices from the engine's library, and the one graphic that escalates across the video); the
@@ -347,6 +350,21 @@ lines returns unless the user asks.
    and when: most of the time the footage is what you see.
    Sensation over conceit: a concept whose appeal is a clever mapping that needs explaining (the verses
    as chess moves, the song as a lecture) is a design idea, not a video idea. Drop it.
+   **The colour pattern.** Say for each concept how much of the frame its colour takes: restrained (the
+   footage's own colour, one accent on a few percent of the frame), committed (one saturated colour
+   carries a third to half of the picture through the grade), a full palette (three or four colours with
+   fixed jobs), or drenched (the whole picture lives in one hue). Then write the pattern in three
+   words: the ground (dark, mid, light), the hue family, and the accent's temperature. The three
+   concepts differ in at least one of those, and none repeats the last video's pattern. Changing the
+   hex and keeping the pattern is the same look: "dark ground, one warm accent, cream type" stays that
+   whether the accent is amber or vermilion.
+   **The face.** Choose type from a thing in the song's world, not from its genre: a ticket stub, a
+   truck door, a cassette inlay, a shop sign, a subtitle on a bootleg tape. "A synth song, so chrome
+   script" and "a serious song, so a serif" are the associations to break. `mv/scripts/fonts.py` lists
+   openly licensed faces by what they come from and fetches the one chosen; `fonts.py --sheet` sets
+   the song's own words in all of them, to choose by eye. The nearest system font is the fallback, not
+   the choice. One family, or a display face and a text face with fixed jobs, never three. Size and
+   tight tracking carry a big word; bold and big together is the reflex.
 5. **Test each concept** against the craft list above and the habits below; replace any that fails.
 6. **Propose.** Send the three in one short message with a recommendation, and ask which one in a plain
    question. Recommend the one that fits the brief best and hits hardest at the drop, not the most novel
@@ -361,6 +379,14 @@ lines returns unless the user asks.
      own number is that line's explaining graphic, not this habit)
    - thin, widely tracked capitals for the artist and title, centered over the intro
    - one big word behind the performer in a heavy grotesk (Futura, Impact)
+   - the faces every generated design reaches for: Inter, Roboto, Montserrat, Space Grotesk, Space Mono,
+     Playfair Display, DM Sans, Outfit, Syne, Bebas Neue, and whichever face the last video used
+   - near-black with one neon accent and glowing edges; dark ground, one warm accent, cream type;
+     purple or violet gradients, cyan on dark (a hue between blue-violet and magenta only when the brief
+     names it)
+   - gradient-filled letters; a coloured glow as the only thing separating type from the picture
+   - type and panels that keep breathing, floating or pulsing after they land; every element fading in
+     and sliding up the same way; bounce and elastic settles
    - letterboxed intro and breakdown with lyric cards decoding in the bar
    - a film-leader countdown before drops; a white flash plus a shockwave ring on the drop
    - star glints on the hi-hats, neon-tube script, synthwave sun-and-grid backgrounds
@@ -500,7 +526,8 @@ dissolves in old films carry a ghost of the next shot for a second or more.
 
 **Build the concept.** `look.py`: the `FINISH` (from a start), on top of the palettes and grades written
 for the edit. `fx.py`: overlays
-(`draw_front`, `draw_behind`), the explaining graphics from the line table through a `devices.Plan`,
+(`draw_front`, `draw_behind`), particles that live in the shot (`PARTICLES`, `particles.py`), the
+explaining graphics from the line table through a `devices.Plan`,
 the depth treatments as `depth_fx` on their shots in `edl.py`, shaders (`GLSL_COMP` with the person
 matte and `DEPTH`, `GLSL_FINAL`) for matte
 tricks, light and accents, and per-frame uniforms from the audio and song position (they can also drive
@@ -516,6 +543,7 @@ every block stays off every face.
 .venv/bin/python mv/scripts/sheet.py mv/work/stills/s mv/work/stills/sheet
 .venv/bin/python mv/scripts/facecheck.py --size 1920x1080   # every frame's overlay against the heads
 .venv/bin/python mv/scripts/contrastcheck.py --size 1920x1080   # every element against its picture
+.venv/bin/python mv/scripts/readcheck.py --size 1920x1080       # long enough, large enough, inside the margins
 .venv/bin/python mv/scripts/render.py mv/out/<name>_v1.mp4                         # full render
 .venv/bin/python mv/scripts/beatsheet.py mv/out/<name>_v1.mp4 mv/work/drop1.jpg <drop_time> 32   # one frame per beat
 .venv/bin/python mv/scripts/qc.py mv/out/<name>_v1.mp4 --ignore-after <end>
@@ -538,6 +566,14 @@ sheets in `mv/review/contrast_NN.jpg`. It has to pass as well. Light type with a
 soft shadow reads on any shot; a shadow alone does not hold white type on a white jacket or a bright
 sky. `references/compositor.md`, "Contrast", has the fixes.
 
+**Reading.** `readcheck.py` at the output size follows every element of the overlay through the video
+and lists type that leaves before it can be read (0.4 s for a word or two, about 1 s for three words,
+1.7 s for six), lines under 2% of the frame's short side for half a second or more (unreadable on a
+phone; `--fine-print` for a style that wants fine print), and anything inside the edge margins, which
+are deeper at the top and bottom of vertical output where the feed's own buttons sit. Its sheets
+(`mv/review/read_NN.jpg`) show each case at phone size, 360 px wide. It is a report, not a gate: look at
+every line of it, fix what is a mistake, and know why the rest stands.
+
 **Judge the stills before the full render**, at the drops, the loudest chorus, the breakdown, the intro
 and the end card. The y-flip, palette and exposure mistakes all show up there. Don't approve your own
 stills because the idea is clever.
@@ -557,8 +593,9 @@ stills because the idea is clever.
 A three-and-a-half-minute render takes a few minutes on a recent Apple Silicon Mac; segments are cached
 in `mv/work/seg/` (delete a clip's segments there after replacing the clip). Fine grain raises the
 bitrate: expect about 900 MB for three and a half minutes at CRF 19 with heavy grain. After the render,
-`beatsheet.py` shows whether the picture lands on the beats around a drop, `qc.py` lists black frames
-and frozen stretches, and `ffprobe` on the file should show one video and one audio stream as long as
+`beatsheet.py` shows whether the picture lands on the beats around a drop, `qc.py` lists black frames,
+frozen stretches and flash frames (one or two frames that differ from both neighbours: look at each,
+they read as glitches), and `ffprobe` on the file should show one video and one audio stream as long as
 the song.
 
 **Lip sync.** When the song is an existing video's own soundtrack and the user sees that video play in
@@ -594,6 +631,6 @@ before commercial release), and any shot you are unsure about. Clear superseded 
 Bring `mv/NOTES.md` up to date with the version delivered and what is still open.
 
 When the user accepts a video, add its entry at the top of `~/.claude/music-video/history.md` in the
-template's format (brief, look, edit, type, graphics, signature) and save a six-frame sheet of it to
+template's format (brief, look with its colour pattern, edit, type with its faces, graphics, signature) and save a six-frame sheet of it to
 `~/.claude/music-video/refs/<title>.jpg` (drops, loudest chorus, intro). When the user rejects a
 direction outright, add it under "Rejected directions" with their reasons.

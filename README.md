@@ -47,10 +47,10 @@ section). The skill copies them into each project from there.
 
 The skill is pinned to one engine commit (`ENGINE_REV` in `SKILL.md`) and looks for it in
 `~/.claude/music-video/engine/<commit>/`. When it isn't there, the skill stops and sends you here. The
-current version is `56021ac`:
+current version is `eb54b0f`:
 
 ```
-ENGINE_REV=56021acadc15c50ddfccfe181f4cca82e27b777d
+ENGINE_REV=eb54b0f4a219a4eb763bda804367d085b7626c8c
 DEST="$HOME/.claude/music-video/engine/$ENGINE_REV"
 mkdir -p "$DEST" &&
 curl -fsSL "https://codeload.github.com/TheMarco/claude-music-video/tar.gz/$ENGINE_REV" |
@@ -63,9 +63,9 @@ every file is plain Python you can read first. With git instead:
 
 ```
 git clone https://github.com/TheMarco/claude-music-video.git && cd claude-music-video
-git checkout 56021acadc15c50ddfccfe181f4cca82e27b777d
-mkdir -p ~/.claude/music-video/engine/56021acadc15c50ddfccfe181f4cca82e27b777d
-cp -R engine/. ~/.claude/music-video/engine/56021acadc15c50ddfccfe181f4cca82e27b777d/
+git checkout eb54b0f4a219a4eb763bda804367d085b7626c8c
+mkdir -p ~/.claude/music-video/engine/eb54b0f4a219a4eb763bda804367d085b7626c8c
+cp -R engine/. ~/.claude/music-video/engine/eb54b0f4a219a4eb763bda804367d085b7626c8c/
 ```
 
 After an update of the plugin the skill may ask for a newer engine: run the same steps with the commit
@@ -99,6 +99,9 @@ Every request the scripts make is anonymous. Network access:
 - your video-generation MCP, only through its own tools: prompts, and the reference photos you choose
   to send it; finished clips are downloaded from the URLs it returns (`fetch_clip.py`)
 - Python packages from PyPI during setup
+- raw.githubusercontent.com: the typefaces a video uses, openly licensed (SIL OFL) files from the public
+  google/fonts repository at a pinned commit, fetched anonymously with pinned checksums into
+  `~/.cache/music-video/fonts/` (`fonts.py`)
 - the lyrics, background-removal and depth models on first use, downloaded anonymously and checked
   against pinned checksums (`models.py`): Whisper large-v3-turbo and Depth Anything V2 Small (Apache-2.0,
   for the depth treatments) from huggingface.co into `~/.cache/music-video/models/`, and rembg's person
@@ -129,7 +132,7 @@ path/to/.venv/bin/python engine/scripts/smoke_test.py
 ```
 
 It pushes a synthetic song and test-pattern clips through analysis, the grid check, the edit, stills,
-a full render, a vertical hook, QC and the face and contrast checks, and stops at the first step that
+a full render, a vertical hook, QC and the face, contrast and reading checks, and stops at the first step that
 fails. Then commit, set `ENGINE_REV` in `plugins/music-video-generator/skills/music-video/SKILL.md` and
 in "Install the engine" above to that commit, and raise `version` in `plugin.json`. The plugin itself
 never downloads the engine: the skill checks for it and sends users to "Install the engine".

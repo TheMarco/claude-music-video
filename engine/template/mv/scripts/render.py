@@ -17,11 +17,15 @@ a person matte or a depth map (make_matte.py, make_depth.py) get matching matte 
 with screen="NAME" get fx.SCREENS' picture warped onto the screen tracked in their source (screen.py) as
 their frames are read. Every output frame is then built on the GPU with moderngl:
   pass 1  layer transforms (zoom/pan/rotate/shake, mirror, kaleidoscope), gradient-map grading,
-          dissolves, double exposure (over track), the shot's depth treatment (depth_fx), echo/trail
-          feedback, glitch; matte (and the behind_depth key) in alpha
-  pass 2  overlay: "behind" layer (big words) masked by the person matte, then the "front" layer
+          dissolves, the shot's lens treatment (depth_fx "focus": depth of field with the person sharp;
+          "shafts": light rays from a point, shadowed by the person), double exposure (over track), the
+          shot's depth treatment (depth_fx), echo/trail feedback, glitch; matte (and the behind_depth key)
+          in alpha
+  parts   fx.PARTICLES (particles.py) drawn at their depth in the scene, hidden behind whatever is nearer
+  pass 2  the particles, then the overlay: "behind" layer (big words) masked by the person matte, glass
+          (the picture blurred and bent under the overlay's glass mask), then the "front" layer
   bloom   two-level bloom from the bright pass
-  final   punch-in, shockwave, chromatic aberration, bloom/halation, star glints, flash, fx.py's
+  final   punch-in, shockwave, chromatic aberration, sharpening, bloom/halation, star glints, flash, fx.py's
           final shader, vignette, scanlines, film grain, fade
 Sources can also be GEN_GRID, GEN_PLASMA or GEN_TUNNEL: procedural backgrounds drawn in the shader
 that pulse with the kick, for visualizers and footage-free sections.
@@ -48,6 +52,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))
 from media import GEN_IDS, crop_for, depth_path, is_ai, is_gen, is_image, matte_path, seg_size, src_path  # noqa: E402
 import fx  # noqa: E402
+import particles  # noqa: E402
 import screen  # noqa: E402
 from look import FINISH, GRADES, PALETTES, SHADOW_TINT  # noqa: E402
 from overlay import Overlay  # noqa: E402
@@ -57,8 +62,8 @@ from timing import (BEAT, DROPS, DUR, END, FPS, HIT_LEAD, SHOCKS, SONG, bar_line
 ROOT = Path("mv")
 SEG = ROOT / "work" / "seg"
 SW, SH = seg_size()   # 1280x720 unless look.SEG_SIZE says otherwise (footage made vertical: 1080x1920)
-DEPTH_FX = {"relight": 1, "contours": 2, "scan": 3, "haze": 4}
-DEPTH_AMT = {"relight": 0.85, "contours": 0.9, "scan": 0.8, "haze": 0.45}
+DEPTH_FX = {"relight": 1, "contours": 2, "scan": 3, "haze": 4, "focus": 5, "shafts": 6}
+DEPTH_AMT = {"relight": 0.85, "contours": 0.9, "scan": 0.8, "haze": 0.45, "focus": 1.8, "shafts": 0.8}
 
 VERT = """
 #version 330
@@ -91,11 +96,15 @@ P1 = """
 uniform sampler2D tA, tB, tC, tPrev, tMA, tMB, tDA, tDB;
 uniform float hasMA, hasMB, hasDA, hasDB;
 uniform float dTreat, dPhase, dAmt, dCount, dBehind;   // the shot's depth treatment and behind_depth key
+uniform float dFocus;   // "focus": the depth that stays sharp
+uniform vec2 dPos;      // "shafts": where the light is, in uv
 uniform vec3 dCol;
 uniform vec4 xfA, xfB, xfC;          // zoom, offx, offy, rot
 uniform vec4 gA1, gA2, gB1, gB2, gC1, gC2;  // (gm,pal,sat,con) (lift,expo,mirror,kal)
 uniform float mixAB, opC, blendC, echo, trail, glitch, time, kalRot, genA, genB, genC, kick, loud;
-in vec2 uv; out vec4 o;
+in vec2 uv;
+layout(location = 0) out vec4 o;
+layout(location = 1) out vec4 o2;   // depth, person matte, has-depth: what the particle pass hides behind
 float DEPTH = 0.0;   // depth at this pixel (0 far .. 1 near) on shots with a depth map; fxComp may read it
 """ + COMMON + """
 vec3 pal(float l, float id){
@@ -161,8 +170,64 @@ vec3 layer(sampler2D t, vec2 p, vec4 xf, vec4 g1, vec4 g2, vec2 gofs, float gen)
   } else c = texture(t, q).rgb;
   return grade(c, g1, g2);
 }
+vec3 shot(vec2 p, vec2 gofs){          // the main track at p: the shot, or two of them in a dissolve
+  vec3 a = layer(tA, p, xfA, gA1, gA2, gofs, genA);
+  if (mixAB > 0.0) a = mix(a, layer(tB, p, xfB, gB1, gB2, gofs, genB), mixAB);
+  return a;
+}
+float matteAt(vec2 p){
+  float mA = 0.0, mB = 0.0;
+  if (hasMA > 0.5){ vec2 q = xform(p, xfA, gA2.z, gA2.w); q.y = 1.0 - q.y; mA = texture(tMA, q).r; }
+  if (hasMB > 0.5){ vec2 q = xform(p, xfB, gB2.z, gB2.w); q.y = 1.0 - q.y; mB = texture(tMB, q).r; }
+  return mix(mA, mB, mixAB);
+}
+float depthAt(vec2 p){
+  float dA = 0.0, dB = 0.0;
+  if (hasDA > 0.5){ vec2 q = xform(p, xfA, gA2.z, gA2.w); q.y = 1.0 - q.y; dA = texture(tDA, q).r; }
+  if (hasDB > 0.5){ vec2 q = xform(p, xfB, gB2.z, gB2.w); q.y = 1.0 - q.y; dB = texture(tDB, q).r; }
+  return mix(hasDA > 0.5 ? dA : dB, hasDB > 0.5 ? dB : dA, mixAB);
+}
+// blur of a pixel at depth d: nothing within 0.06 of the focus depth, so there is a plane that is truly sharp
+float coc(float d, float m){ return clamp((abs(d - dFocus) - 0.06)*dAmt, 0.0, 1.0)*(1.0 - m); }
+vec3 lens(vec3 col, vec2 p, vec2 gofs, float matte){
+  if (dTreat > 4.5 && dTreat < 5.5 && max(hasDA, hasDB) > 0.5){
+    // focus: depth of field. Each pixel gathers a disc as wide as its own blur; a tap counts only as far
+    // as it is out of focus itself, so the sharp person never smears into the soft background, and bright
+    // taps weigh more, which is what turns lights into discs.
+    float c0 = coc(DEPTH, matte);
+    if (c0 > 0.02){
+      vec3 acc = col; float ws = 1.0;
+      float rot = hash(uv*917.0)*6.2831853;
+      for (int i = 1; i <= 32; i++){
+        float fi = float(i);
+        float r = sqrt(fi/32.0)*c0*0.024, th = fi*2.39996323 + rot;
+        vec2 q = p + vec2(cos(th)/ASP, sin(th))*r;
+        vec3 c = shot(q, gofs);
+        float w = smoothstep(0.0, 0.3, coc(depthAt(q), matteAt(q))/c0);
+        w *= 1.0 + 2.0*smoothstep(0.7, 1.0, max(c.r, max(c.g, c.b)));
+        acc += c*w; ws += w;
+      }
+      col = acc/ws;
+    }
+  }
+  if (dTreat > 5.5){
+    // shafts: light rays from dPos. Each pixel walks toward the light and adds up the bright picture on the
+    // way; where the person stands between it and the light, nothing adds, so they cut a shadow in the rays.
+    vec3 acc = vec3(0.0); float w = 1.0, ws = 0.0;
+    float jit = hash(uv*731.0 + time);
+    for (int i = 0; i < 28; i++){
+      vec2 q = mix(p, dPos, (float(i) + jit)/28.0*0.92);
+      vec3 c = shot(q, gofs);
+      float l = max(c.r, max(c.g, c.b));
+      acc += c*smoothstep(0.55, 0.9, l)*(1.0 - matteAt(q))*w; ws += w; w *= 0.95;
+    }
+    float fall = 1.0 - smoothstep(0.2, 1.3, distance(p*vec2(ASP, 1.0), dPos*vec2(ASP, 1.0)));
+    col += dCol*(acc/ws)*dAmt*4.0*fall*(0.75 + 0.5*kick)*(1.0 - 0.75*matte);
+  }
+  return col;
+}
 vec3 depthTreat(vec3 col, vec2 uv){
-  if (dTreat < 0.5 || max(hasDA, hasDB) < 0.5) return col;
+  if (dTreat < 0.5 || dTreat > 4.5 || max(hasDA, hasDB) < 0.5) return col;
   float d = DEPTH;
   float lum = dot(col, vec3(.299,.587,.114));
   if (dTreat < 1.5){            // relight: a plane of light travels from near to far once per cycle
@@ -198,17 +263,10 @@ void main(){
     if (hash(vec2(band, seed)) < glitch*0.7) p.x += (hash(vec2(band, seed+3.1))-0.5)*0.22*glitch;
     gofs = vec2(0.006 + 0.02*glitch, 0.0);
   }
-  vec3 a = layer(tA, p, xfA, gA1, gA2, gofs, genA);
-  float mA = 0.0, mB = 0.0;
-  if (hasMA > 0.5){ vec2 q = xform(p, xfA, gA2.z, gA2.w); q.y = 1.0 - q.y; mA = texture(tMA, q).r; }
-  if (hasMB > 0.5){ vec2 q = xform(p, xfB, gB2.z, gB2.w); q.y = 1.0 - q.y; mB = texture(tMB, q).r; }
-  float matte = mix(mA, mB, mixAB);
-  float dA = 0.0, dB = 0.0;
-  if (hasDA > 0.5){ vec2 q = xform(p, xfA, gA2.z, gA2.w); q.y = 1.0 - q.y; dA = texture(tDA, q).r; }
-  if (hasDB > 0.5){ vec2 q = xform(p, xfB, gB2.z, gB2.w); q.y = 1.0 - q.y; dB = texture(tDB, q).r; }
-  DEPTH = mix(hasDA > 0.5 ? dA : dB, hasDB > 0.5 ? dB : dA, mixAB);
-  vec3 col = a;
-  if (mixAB > 0.0) col = mix(a, layer(tB, p, xfB, gB1, gB2, gofs, genB), mixAB);
+  float matte = matteAt(p);
+  DEPTH = depthAt(p);
+  vec3 col = shot(p, gofs);
+  if (dTreat > 4.5) col = lens(col, p, gofs, matte);
   if (opC > 0.0){
     vec3 c = layer(tC, p, xfC, gC1, gC2, gofs, genC) * opC;
     if (blendC < 0.5) col = 1.0-(1.0-col)*(1.0-c);
@@ -227,6 +285,7 @@ void main(){
   if (trail > 0.0) col = max(col, prev*trail);
   float key = dBehind > 0.0 && max(hasDA, hasDB) > 0.5 ? smoothstep(dBehind - 0.04, dBehind + 0.04, DEPTH) : 0.0;
   o = vec4(col, max(matte, key));   // behind-layer type tucks behind the person and anything nearer than dBehind
+  o2 = vec4(DEPTH, matte, max(hasDA, hasDB), 1.0);
 }
 """
 
@@ -257,17 +316,39 @@ P1 = P1.replace("PALETTE_CODE", _palette_glsl()).replace("void main(){", _fx_gls
 
 P2 = """
 #version 330
-uniform sampler2D tBase, tOver, tBehind;
-uniform float overGain, hasOver, hasBehind, letterbox;
+uniform sampler2D tBase, tOver, tBehind, tGlass, tPart;
+uniform float overGain, hasOver, hasBehind, hasGlass, hasPart, letterbox;
 in vec2 uv; out vec4 o;
 void main(){
   vec4 bs = texture(tBase, uv);
   vec3 c = bs.rgb;
+  if (hasPart > 0.5){ vec4 pt = texture(tPart, uv); c = c*(1.0 - pt.a) + pt.rgb; }
   float bar = 0.5*letterbox*(1.0-(ASP_VALUE)/2.39);
   if (uv.y < bar || uv.y > 1.0-bar) c = vec3(0.0);
   if (hasBehind > 0.5){
     vec4 t = texture(tBehind, vec2(uv.x, 1.0-uv.y));
     c = mix(c, t.rgb, t.a*(1.0 - smoothstep(0.3, 0.6, bs.a)));
+  }
+  if (hasGlass > 0.5){   // glass: under the overlay's glass mask the picture is frosted, and bent at the rim
+    vec2 guv = vec2(uv.x, 1.0-uv.y);
+    float g = texture(tGlass, guv).r;
+    if (g > 0.004){
+      vec2 e = 5.0/OUT_RES;
+      vec2 grad = vec2(texture(tGlass, guv + vec2(e.x, 0.0)).r - texture(tGlass, guv - vec2(e.x, 0.0)).r,
+                       texture(tGlass, guv - vec2(0.0, e.y)).r - texture(tGlass, guv + vec2(0.0, e.y)).r);
+      vec2 q = uv + grad*0.02;
+      float rot = fract(sin(dot(uv*OUT_RES, vec2(12.9898, 78.233)))*43758.5453)*6.2831853;
+      vec3 acc = vec3(0.0);
+      for (int i = 0; i < 32; i++){
+        float r = sqrt((float(i) + 0.5)/32.0)*0.016, th = float(i)*2.39996323 + rot;
+        vec2 s = q + vec2(cos(th)/(ASP_VALUE), sin(th))*r;
+        acc += texture(tBase, s).rgb;
+      }
+      acc /= 32.0;
+      float l = dot(acc, vec3(.299,.587,.114));
+      acc = mix(vec3(l), acc, 1.45)*0.94 + 0.05 + 0.35*length(grad);   // richer colour, a little milk, a lit rim
+      c = mix(c, max(acc, 0.0), g);
+    }
   }
   if (hasOver > 0.5){
     vec4 t = texture(tOver, vec2(uv.x, 1.0-uv.y));
@@ -300,7 +381,7 @@ void main(){
 FINAL = """
 #version 330
 uniform sampler2D tComp, tB1, tB2;
-uniform float bloom, halation, ca, shockT, shockAmp, grain, vignette, scan, letterbox, fade, flash, time, punch, invert, tint, glint;
+uniform float bloom, halation, ca, shockT, shockAmp, grain, vignette, scan, letterbox, fade, flash, time, punch, invert, tint, glint, sharpen;
 in vec2 uv; out vec4 o;
 """ + COMMON + """
 void main(){
@@ -318,6 +399,15 @@ void main(){
   col.r = texture(tComp, mrep(p + dir*cr)).r;
   col.g = texture(tComp, mrep(p)).g;
   col.b = texture(tComp, mrep(p - dir*cr)).b;
+  if (sharpen > 0.0){   // contrast-adaptive: strongest on soft detail, backing off at edges that already clip
+    vec2 px = 1.0/OUT_RES;
+    vec3 n = texture(tComp, mrep(p + vec2(0.0, px.y))).rgb, s = texture(tComp, mrep(p - vec2(0.0, px.y))).rgb;
+    vec3 e = texture(tComp, mrep(p + vec2(px.x, 0.0))).rgb, w = texture(tComp, mrep(p - vec2(px.x, 0.0))).rgb;
+    vec3 mn = min(col, min(min(n, s), min(e, w))), mx = max(col, max(max(n, s), max(e, w)));
+    vec3 amp = sqrt(clamp(min(mn, 1.0 - mx)/max(mx, vec3(1e-4)), 0.0, 1.0));
+    vec3 wt = amp*(-1.0/mix(8.0, 5.0, clamp(sharpen, 0.0, 1.0)));
+    col = max((col + (n + s + e + w)*wt)/(1.0 + 4.0*wt), 0.0);
+  }
   vec3 b1 = texture(tB1, p).rgb, b2 = texture(tB2, p).rgb;
   col += b1*bloom + b2*bloom*0.8;
   col += b2*halation*vec3(1.0,0.32,0.12);
@@ -580,9 +670,10 @@ def main():
     k = 1080.0 / min(W, H)
     global P1, P2, FINAL
     P1 = P1.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}")
-    P2 = P2.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}")
+    P2 = (P2.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}")
+          .replace("OUT_RES", f"vec2({W:.1f}, {H:.1f})"))
     FINAL = (FINAL.replace("SRC_ASP_VALUE", f"{SW / SH:.6f}").replace("ASP_VALUE", f"{out_asp:.6f}").replace("GRAIN_RES", f"vec2({W * k:.1f}, {H * k:.1f})")
-             .replace("SCAN_RES", f"{H * k:.1f}"))
+             .replace("SCAN_RES", f"{H * k:.1f}").replace("OUT_RES", f"vec2({W:.1f}, {H:.1f})"))
     edl = json.loads((ROOT / "data" / "edl.json").read_text())
     snap_edl(edl)
     SEG.mkdir(parents=True, exist_ok=True)
@@ -634,6 +725,13 @@ def main():
     pbr, vbr = prog(BRIGHT)
     pbl, vbl = prog(BLUR)
     pfi, vfi = prog(FINAL)
+    # particles: one quad per particle, instanced
+    ppt = ctx.program(vertex_shader=particles.VERT.replace("ASP_VALUE", f"{out_asp:.6f}"),
+                      fragment_shader=particles.FRAG)
+    pt_cap = 20000
+    pt_buf = ctx.buffer(reserve=pt_cap * 44, dynamic=True)
+    vpt = ctx.vertex_array(ppt, [(quad, "2f", "corner"), (pt_buf, "4f 4f 3f /i", "pz", "pcol", "pdir")])
+    emitters = None if args.clean else getattr(fx, "PARTICLES", None)
 
     def tex(w, h, comps=3, dtype="f1"):
         t = ctx.texture((w, h), comps, dtype=dtype)
@@ -643,6 +741,10 @@ def main():
     tA, tB, tC = tex(SW, SH), tex(SW, SH), tex(SW, SH)
     tOver = tex(W, H, 4)
     tBehind = tex(W, H, 4)
+    tGlass = tex(W, H, 1)
+    tAux = tex(W, H, 4)
+    tPart = tex(W, H, 4, "f2")
+    fpart = ctx.framebuffer([tPart])
     tMA, tMB = tex(SW, SH, 1), tex(SW, SH, 1)
     tDA, tDB = tex(SW, SH, 1), tex(SW, SH, 1)
     feats = np.load(ROOT / "data" / "audio_feats.npz")
@@ -655,7 +757,7 @@ def main():
                 if k in pr:
                     pr[k] = tuple(v) if isinstance(v, (tuple, list)) else float(v)
     base = [tex(W, H, 4, "f2"), tex(W, H, 4, "f2")]
-    fbase = [ctx.framebuffer([b]) for b in base]
+    fbase = [ctx.framebuffer([b, tAux]) for b in base]
     comp = tex(W, H, 4, "f2")
     fcomp = ctx.framebuffer([comp])
     bw, bh = W // 4, H // 4
@@ -797,6 +899,12 @@ def main():
         p1["dAmt"] = float(seg.get("depth_amt", DEPTH_AMT.get(dfx, 0.0)))
         p1["dCol"] = tuple(seg.get("depth_col", (1.0, 0.93, 0.8)))
         p1["dBehind"] = float(seg.get("behind_depth", 0.0))
+        foc = seg.get("depth_focus", 0.9)   # a number, or (from, to) for a focus pull across the shot
+        if isinstance(foc, (tuple, list)):
+            foc = foc[0] + (foc[1] - foc[0]) * ease(local / max(seg["dur"], 1e-3))
+        p1["dFocus"] = float(foc)
+        lx, ly = seg.get("depth_at", (0.5, 0.12))   # where the light is, frame coordinates (y down)
+        p1["dPos"] = (float(lx), 1.0 - float(ly))
         p1["xfA"] = xf_uniform(sa, la)
         ga1, ga2 = grade_uniform(sa)
         p1["gA1"], p1["gA2"] = ga1, ga2
@@ -829,10 +937,35 @@ def main():
         fbase[ping].use()
         v1.render(moderngl.TRIANGLE_STRIP)
 
+        # particles (fx.PARTICLES): at their depth in the scene, hidden behind whatever pass 1 says is nearer
+        pts = None
+        if emitters:
+            pts, person = particles.frame(emitters, t, fxa, out_asp, ov.heads(t), (W, H))
+        if pts is not None and len(pts):
+            pts = pts[:pt_cap]
+            pt_buf.write(np.ascontiguousarray(pts).tobytes())
+            fpart.use()
+            ctx.clear(0, 0, 0, 0)
+            ctx.enable(moderngl.BLEND)
+            ctx.blend_func = (moderngl.ONE, moderngl.ONE_MINUS_SRC_ALPHA)
+            ppt["tAux"] = 0
+            tAux.use(0)
+            ppt["res"] = (float(W), float(H))
+            ppt["person"] = person
+            vpt.render(moderngl.TRIANGLE_STRIP, instances=len(pts))
+            ctx.disable(moderngl.BLEND)
+
         # pass 2: text (the EDL's end-card tail is BLACK, so fx.py can draw the end card in any pass)
         ob, o = (None, None) if args.clean else ov.frame(
             t, {"src": seg["src"], "local": local, "dur": seg["dur"], "label": seg.get("label")})
-        p2["tBase"], p2["tOver"], p2["tBehind"] = 0, 1, 2
+        og = None if args.clean else ov.glass_arr
+        p2["tBase"], p2["tOver"], p2["tBehind"], p2["tGlass"], p2["tPart"] = 0, 1, 2, 3, 4
+        if og is not None:
+            tGlass.write(og.tobytes())
+            tGlass.use(3)
+        tPart.use(4)
+        p2["hasGlass"] = 1.0 if og is not None else 0.0
+        p2["hasPart"] = 1.0 if pts is not None and len(pts) else 0.0
         base[ping].use(0)
         if o is not None:
             tOver.write(o.tobytes())
@@ -885,6 +1018,7 @@ def main():
         pfi["ca"] = FINISH["ca"][0] + FINISH["ca"][1] * kenv + 0.012 * glitch
         pfi["shockT"], pfi["shockAmp"] = shockT, shockAmp
         pfi["grain"] = FINISH["grain"][src_i]
+        pfi["sharpen"] = FINISH.get("sharpen", (0.0, 0.0))[src_i]
         pfi["vignette"] = FINISH["vignette"][1 if calm or name == "intro" else 0]
         pfi["scan"] = seg.get("scan", 0.0)
         pfi["fade"] = fade

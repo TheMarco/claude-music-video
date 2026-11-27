@@ -39,9 +39,12 @@ questions, in order, and stop at the first that gives a picture:
 1. Does the line claim a number? A counter, a chart, a gauge, a before-and-after strike.
 2. Is the joke about an interface? Draw that interface: a terminal, a chat, a poll, a status card.
 3. Is there an object or a person in frame that can carry it? Label it, measure it, classify it (a
-   detection tag with a wrong or funny class, a callout on the thing).
-4. Does it describe a mechanism? A diagram of it, a flow, a plan view.
-5. Does it name a place? A map, coordinates, a route.
+   detection tag with a wrong or funny class, a callout on the thing, a hand-drawn circle or arrow
+   that draws itself round it: `Mark`; the thing itself cut out of the footage and stuck on as a
+   sticker, kept and collected: `Sticker`).
+4. Does it describe a mechanism? A diagram of it, a flow (`Flow`: boxes and arrows that draw on a node a
+   beat), a plan view.
+5. Does it name a place? A map, coordinates, a route (`Route`: a line travelling between named stops).
 6. What is at stake? A readout that ticks toward something.
 7. Is it a callback? The earlier graphic, one step further.
 
@@ -84,7 +87,14 @@ of micro type; a line whose picture already explains itself can go without.
 - **Type that acts out its word.** The entrance has a reason: a word about pressure arrives crushed flat
   and springs to size, a word about doubt types, deletes and retypes, a word about heat arrives glowing
   and cools to the type's colour, a price falls digit by digit like an odometer run backwards. One
-  family per video, a new move on the hook.
+  family per video, a new move on the hook. Most of these act on one letter at a time (`ov.glyphs`,
+  `ov.stagger`, a variable face's weight and width; references/compositor.md, "Letters one at a
+  time"). Physics that reads: weight drops and squashes on landing, each bounce lower by about half and
+  quicker; fear is a shake that dies away over ten or so wiggles; forgetting is letters let go one by
+  one and falling under gravity; doubt is the word resolving out of scrambled letters, left to right,
+  the unsettled ones changing every third frame (never every frame); a line that changes its mind
+  keeps the letters both versions share and slides them to their new places while the others fade.
+  The word starts early enough to have landed on its beat, then holds still.
 - **Footage under everything.** A counter, a diagram or an inventory sits over the footage as a card or
   as type, never as a full-frame graphic with no video: a graphic screen cut in as a shot was rejected
   in testing.
@@ -104,6 +114,8 @@ Where each kind goes in the engine (`references/compositor.md`):
   composited picture (`tComp`) adds the bloom textures (`tB1`, `tB2`) back itself.
 - `draw_behind` and `draw_front`: shapes behind and in front of the person; everything in front goes
   through `ov.place` against the heads.
+- `PARTICLES` (`particles.py`): weather and sparks at a depth in the scene. The glass mask
+  (`Style(glass=True)`, `ov.add_glass`, `ov.glass_draw`): cards and words the footage shows through.
 - The EDL's `echo`, `trail` and `glitch` per shot: afterimages, smears and tears.
 
 ## Overlays (draw_front / draw_behind, or additive light in fxFinal)
@@ -111,8 +123,9 @@ Where each kind goes in the engine (`references/compositor.md`):
 Light: light leaks drifting across on phrase starts, lens flares anchored to bright sources, beams
 sweeping through the builds, light streaks racing across on the hats, a glow that swells with the bass.
 
-Particles and materials: one thing from the lyrics or theme drifting over the footage (ash, embers,
-sparks, snow, glitter, petals, dust motes), smoke in the lower third lit by the kick, water running down
+Particles and materials: one thing from the lyrics or theme drifting through the footage (ash, embers,
+sparks, snow, glitter, petals, dust motes; `particles.py` puts each at a depth in the scene, so it
+passes behind the person and the buildings instead of lying on the lens), smoke in the lower third lit by the kick, water running down
 the lens, thin cracks spreading from a corner on hits.
 
 Marks: one small symbol or shape from the song that returns at key moments, changed each time; a

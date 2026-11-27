@@ -256,7 +256,7 @@ In the order that worked:
    "Density" above. Fewer big elements than two frames in three means more gags or more words before
    rendering.
 5. **Faces clear and contrast, checked.** `heads.py` after the edit is final, every head sheet looked
-   at and corrected, then `facecheck.py` and `contrastcheck.py` at the output size, which both have to
+   at and corrected, then `readcheck.py --fine-print` (a report: fix what is a mistake), and `facecheck.py` and `contrastcheck.py` at the output size, which both have to
    pass before anything is shown. In an extreme close-up there is often no room: give that shot no type,
    or end the line before the face fills the frame. Slopcore cuts between night interiors, bright skies
    and white outfits, so type that reads on one shot washes out on the next: outline it, and give dark
