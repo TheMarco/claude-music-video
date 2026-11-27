@@ -7,7 +7,14 @@ Overlay(W, H).frame(t, ctx) returns (behind, front): RGBA uint8 arrays (straight
 
 Helpers for fx.py, all sized in 1080p units so one design works at 16:9, 9:16, 1:1 and 4:5:
   ov.w, ov.h, ov.s (short side / 1080), ov.wide (aspect > 1.5)
-  ov.font((path, index), size)                    cached ImageFont at size * ov.s
+  ov.font((path, index), size, axes=None)         cached ImageFont at size * ov.s; axes={"wght": 700,
+                                                  "wdth": 110} sets a variable font's axes, so a held
+                                                  word can thicken or widen with the note (fonts.py)
+  ov.glyphs(text, font, xy, track=0, anchor="lm") [(char, x, y, width)] per letter, laid out as ov.tracked
+                                                  draws them: for moves that act on one letter at a time
+  ov.stagger(i, n, u, lag=0.2)                    letter i of n's own 0..1 progress when the whole move is
+                                                  at u and each letter starts `lag` of a letter after the
+                                                  one before it
   ov.fit((path, index), size, text, track, maxw)  the same, shrunk until the text fits maxw
   ov.tracked(d, xy, text, font, fill, track, anchor="mm"|"lm", stroke=0, stroke_fill=None)
   ov.layer(canvas, fill, mask, alpha)             composite a color/image through an L mask
@@ -69,6 +76,11 @@ def font_path(path):
     raise FileNotFoundError(f"font {path} not found, and no fallback font in {[str(d) for d in FONT_DIRS]}")
 
 
+def _axis_name(a):
+    n = a.get("name", "")
+    return n.decode("utf-8", "ignore") if isinstance(n, bytes) else str(n)
+
+
 def hash01(*a):
     return random.Random(hash(a) & 0xFFFFFFFF).random()
 
@@ -127,12 +139,45 @@ class Overlay:
     def fi(self, t):
         return int(min(max(round(t * FPS), 0), len(self.rms) - 1))
 
-    def font(self, spec, size):
+    def font(self, spec, size, axes=None):
         path, idx = spec
         px = int(size * self.s)
-        if (spec, px) not in self._fonts:
-            self._fonts[(spec, px)] = ImageFont.truetype(font_path(path), px, index=idx)
-        return self._fonts[(spec, px)]
+        key = (spec, px) if not axes else (spec, px, tuple(sorted((k, int(round(v))) for k, v in axes.items())))
+        if key not in self._fonts:
+            if len(self._fonts) > 600:   # an axis animated per frame makes a font per value; keep the cache small
+                self._fonts.clear()
+            f = ImageFont.truetype(font_path(path), px, index=idx)
+            if axes:   # a variable font: every axis the font has, at the value asked for or its default
+                try:
+                    have = f.get_variation_axes()
+                    tag = lambda a: (a.get("tag") or {"Weight": "wght", "Width": "wdth", "Optical Size": "opsz",
+                                                      "Slant": "slnt", "Italic": "ital"}.get(_axis_name(a), ""))
+                    f.set_variation_by_axes([min(max(float(axes.get(tag(a), a["default"])), a["minimum"]), a["maximum"])
+                                             for a in have])
+                except (OSError, AttributeError, KeyError):
+                    pass   # not a variable font, or a Pillow without variation support: the plain face
+            self._fonts[key] = f
+        return self._fonts[key]
+
+    def glyphs(self, text, fnt, xy, track=0, anchor="lm"):
+        """Where ov.tracked would put each letter: [(char, x, y, width)], x the letter's left edge and y the
+        line's middle. Draw each with d.text((x, y), char, font=fnt, anchor="lm") and its own offset, scale,
+        colour or alpha."""
+        widths = [fnt.getlength(c) for c in text]
+        x, y = xy
+        if anchor[0] == "m":
+            x -= (sum(widths) + track * (len(text) - 1)) / 2
+        out = []
+        for c, wd in zip(text, widths):
+            out.append((c, x, y, wd))
+            x += wd + track
+        return out
+
+    @staticmethod
+    def stagger(i, n, u, lag=0.2):
+        """Progress 0..1 of item i of n when the whole move is at u (0..1) and each item starts `lag` of an
+        item's own length after the one before it: lag 0 moves them together, 1 one after the other."""
+        return min(max(u * ((n - 1) * lag + 1) - i * lag, 0.0), 1.0)
 
     def fit(self, spec, size, text, track, maxw):
         """Font spec at size (1080p units), shrunk until text with tracking fits maxw."""

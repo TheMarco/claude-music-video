@@ -41,6 +41,8 @@ OFF = dict(
     punch=0.0,              # zoom punch-in times the beat pulse (per shot: punch= in the EDL scales it)
     vignette=(0.0, 0.0),    # (normal, calm sections and the intro)
     letterbox=[],           # [(start_s, end_s), ...] 2.39 bars on wide output; LETTERBOX is the analyzer's pick
+    sharpen=(0.0, 0.0),     # contrast-adaptive sharpening of the finished frame, 0..1: segments are 720p
+                            # scaled up, and 0.3-0.5 brings back the detail; leaves grain and clipped whites alone
     drop_flash=0.0,         # white flash on each drop in song.json, 0..1
     shock=0.0,              # shockwave ripple on song.json "shocks", times their amplitude
 )

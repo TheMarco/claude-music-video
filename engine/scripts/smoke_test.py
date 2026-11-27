@@ -8,9 +8,9 @@ engine commit.
 
 It builds a throwaway project (a 24 s song at 120 BPM with a quiet intro, two test-pattern clips), then
 runs conform --check, analyze_song, gridcheck, audio_feats, edl (an edit generated on the grid, with a dissolve and a
-double exposure), contact --edl, render --stills (once with the empty fx.py, once with
+double exposure, a shot with light shafts and one with a focus pull), contact --edl, render --stills (once with the empty fx.py, once with
 examples/fx_examples.py), sheet, a full render, beatsheet, qc, heads, facecheck and contrastcheck (with
-the empty fx.py and with the examples), a vertical bar-locked part, a tracked screen (screen.py on a
+the empty fx.py and with the examples), readcheck and the font list, a vertical bar-locked part, a tracked screen (screen.py on a
 clip with a dark panel moving through it, then a still with the panel filled), and concept_dice. It checks that every step exits cleanly and writes what it should, that the analyzer
 finds the tempo, and that the render is as long as the song. It does not test lyrics transcription or
 person mattes or depth maps (all three download large models; the depth treatments still compile and run
@@ -35,7 +35,8 @@ _end = round(beat_at(END), 3)
 _shots, _k = [], 0.0
 while _k < _end - 1e-6:
     _b = min(4.0 if _k < 16 else 2.0, _end - _k)
-    _o = dict(x="dissolve", xd=1) if _k == 8 else {}
+    _o = dict(x="dissolve", xd=1) if _k == 8 else dict(depth_fx="shafts", depth_at=(0.7, 0.2)) if _k == 4 else \
+        dict(depth_fx="focus", depth_focus=(0.9, 0.3)) if _k == 12 else {}
     _shots.append(S("A1" if int(_k // 4) % 2 == 0 else "B1", 0.5 + 0.2 * len(_shots), _b,
                     size="WMCX"[len(_shots) % 4], motif=True, **_o))
     _k += _b
@@ -157,7 +158,7 @@ def main():
     need("mv/work/stills/sheet_0.jpg")
     empty_fx = (scripts / "fx.py").read_text()
     shutil.copy(ENGINE / "examples" / "fx_examples.py", scripts / "fx.py")
-    run(py, "mv/scripts/render.py", "mv/work/stills/x", "--stills", "10,13,17.5")
+    run(py, "mv/scripts/render.py", "mv/work/stills/x", "--stills", "3,5.5,10,13.8,17.5,21.5")
     need("mv/work/stills/x_*.jpg")
     (scripts / "fx.py").write_text(empty_fx)
 
@@ -179,6 +180,8 @@ def main():
     shutil.copy(ENGINE / "examples" / "fx_examples.py", scripts / "fx.py")   # placed, outlined captions pass both
     print(run(py, "mv/scripts/facecheck.py", "--size", "960x540", "--start", "3", "--end", "20"))
     print(run(py, "mv/scripts/contrastcheck.py", "--size", "960x540", "--start", "3", "--end", "20"))
+    print(run(py, "mv/scripts/readcheck.py", "--size", "960x540"))
+    print(run(py, "mv/scripts/fonts.py"))
     (scripts / "fx.py").write_text(empty_fx)
     run(py, "mv/scripts/render.py", "mv/out/smoke_hook.mp4", "--size", "1080x1920", "--start", "8", "--end", "16")
     need("mv/out/smoke_hook.mp4")

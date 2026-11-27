@@ -7,10 +7,14 @@ footage as footage: three are overlays, one is a one-beat accent.
 3. Rim glow: the person's edge lights up warm on each kick (uses the person matte, composite pass).
 4. Embers: sparks rising from the bottom edge, lit by the hi-hats (overlay, front layer).
 5. Captions placed clear of every face for their whole time on screen (ov.place, front layer).
-6. Explaining graphics from the device library (devices.py): a counter and a chart, laid out with the
-   captions and drawn under the frame budget. A real video picks one per line, filled with the line's facts.
+6. Explaining graphics from the device library (devices.py): a counter, a chart, a route, a flow and a
+   hand-drawn mark, laid out with the captions and drawn under the frame budget. A real video picks one
+   per line, filled with the line's facts.
+7. A word whose letters land one after another and thicken as they land (ov.glyphs, ov.stagger, and a
+   variable font's weight axis through fonts.face when the face is on disk).
 Depth treatments need no fx.py code: make_depth.py on a clip, then depth_fx="relight" (or "contours",
-"scan", "haze") on its shots in edl.py; GLSL_COMP can read DEPTH (0 far .. 1 near) on those shots.
+"scan", "haze", "focus") on its shots in edl.py; GLSL_COMP can read DEPTH (0 far .. 1 near) on those shots.
+depth_fx="shafts" needs no depth map: light rays from depth_at=(x, y), shadowed by the person matte.
 """
 import math
 
@@ -67,6 +71,12 @@ _laid = False
 PLAN = DV.Plan(DV.Style(accent=(255, 140, 60)))
 PLAN.add(DV.Counter("FRAMES RENDERED", 576, fmt="{:,.0f}", sub="24 FPS · 24 S"), 12.0, 3.0, prefer=0.3)
 PLAN.add(DV.Chart("LOUDNESS BY BAR", [2, 3, 5, 8, 9, 7], kind="bars", mark="PEAK", per=0.5), 16.0, 3.5, prefer=0.3)
+PLAN.add(DV.Route("THE WAY OUT", ["HOME", "RING ROAD", "COAST"], per=2.0, note="51.92 N  4.48 E  ·  212 KM"),
+         4.0, 3.6, prefer=0.3)
+PLAN.add(DV.Flow("HOW A FRAME IS MADE", [("CUT", "ffmpeg"), ("GRADE", "pass 1"), ("TYPE", "pass 2"), ("FINISH", "final")],
+                 note="ONE NODE A BEAT"), 20.0, 3.4, prefer=0.3)
+PLAN.add(DV.Mark((0.72, 0.62), (0.16, 0.2), kind="circle", text="THIS"), 8.5, 2.5)
+PLAN.add(DV.Mark((0.3, 0.6), (0.1, 0.1), kind="arrow", side="left", text="AND THIS"), 9.0, 2.0)
 
 
 def _caption(ov, d, t, i):
@@ -79,6 +89,32 @@ def _caption(ov, d, t, i):
     f2 = ov.font(CAPTION_FONT, fnt.size / ov.s * k)
     d.text((x, y), text, font=f2, fill=(255, 255, 255, 240), anchor="lm",
            stroke_width=max(2, int(f2.size * 0.05)), stroke_fill=(10, 12, 18, 240))
+
+
+def _landing_word(ov, d, t, text="LANDS", t0=13.0, dur=2.0):
+    """7. Letters arrive one after another, each dropping onto the line and thickening as it lands."""
+    if not t0 <= t < t0 + dur:
+        return
+    try:
+        from fonts import CACHE, FACES
+        p = CACHE / FACES["Anybody"][0] / FACES["Anybody"][1]
+        spec = (str(p), 0) if p.exists() else CAPTION_FONT   # fonts.face("Anybody") would fetch it
+    except ImportError:
+        spec = CAPTION_FONT
+    u = min(1.0, (t - t0) / (2 * BEAT))
+    base = ov.font(spec, 120, axes={"wght": 900})
+    w = sum(base.getlength(c) for c in text) * 1.05
+    x, y, k = ov.place(("landing", text), t0, t0 + dur, w, base.size * 1.6, [(ov.w - w) / 2], 0.72, t=t)
+    if d is None:
+        return
+    for i, (ch, gx, gy, gw) in enumerate(ov.glyphs(text, base, (x, y), 0, "lm")):
+        v = ov.stagger(i, len(text), u, lag=0.5)
+        if v <= 0:
+            continue
+        e = 1 - (1 - v) ** 3
+        fnt = ov.font(spec, 120 * k, axes={"wght": 200 + 700 * e})
+        d.text((gx, gy - (1 - e) * 60 * ov.s), ch, font=fnt, fill=(255, 255, 255, int(255 * min(1.0, v * 3))),
+               anchor="lm", stroke_width=max(2, int(fnt.size * 0.04)), stroke_fill=(10, 12, 18, 255))
 
 
 def draw_front(ov, d, t, f, ctx):
@@ -94,6 +130,7 @@ def draw_front(ov, d, t, f, ctx):
         if t0 <= t < t1:
             _caption(ov, d, t, i)
     PLAN.draw(ov, d._image, t)
+    _landing_word(ov, d, t)
     # 4. embers rising from the bottom, brightness from the hi-hats
     if ov.kick_level(t) < 0.3:
         return

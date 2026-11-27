@@ -7,7 +7,7 @@ engine; a video picks them per line, fills them with the line's own facts, and s
 fonts and accent. Nothing here has a look of its own beyond clean craft: the Style decides.
 
     from devices import Style, Plan, Counter, Gauge, Chart, Poll, Terminal, Chat, Spec, Flap, Stamp, \\
-        Strike, Redact, Progress, Typed, Tags, Callout, word
+        Strike, Redact, Progress, Flow, Route, Typed, Tags, Callout, Mark, word
 
     STYLE = Style(accent=(255, 92, 64), sans=(F + "...", 0), bold=(...), mono=(...), display=(...))
     PLAN = Plan(STYLE)
@@ -19,8 +19,10 @@ fonts and accent. Nothing here has a look of its own beyond clean craft: the Sty
         PLAN.draw(ov, d._image, t, avoid=rects_of_this_frames_lyrics)
 
 Timing: every device runs from t0 for a duration (seconds; use BEAT multiples, or word() for a sung word's
-time) and animates in beats from t0, so it lands on the music. A device should stay long enough to read:
-Plan warns under 1.2 s. Entrances and exits are a short rise and fade, never a one-frame flash.
+time) and animates in beats from t0, so it lands on the music. A panel starts rising `lead` seconds before
+t0 (0.2 s unless Plan.add says otherwise) and has settled when the word or beat arrives; what it shows
+starts moving on t0. A device should stay long enough to read: Plan warns under 1.2 s. Entrances and exits
+are a short rise and fade, never a one-frame flash.
 
 Roles and the frame budget (enforced per frame, newest wins): one "hero" (a panel that carries the line),
 at most two "cv" marks (labels on people or points), at most two "micro" rows. Panels are placed with
@@ -41,9 +43,12 @@ Devices (role, what it explains):
   Stamp     hero  a rubber stamp slammed on the beat: a verdict (COPIED, DENIED, APPROVED)
   Strike    hero  a value struck through and replaced: before and after, a price drop, a downgrade
   Redact    hero  lines with black bars that wipe on (and can lift later): a secret, a leak
+  Flow      hero  boxes joined by arrows that draw on one per beat: a mechanism, a pipeline, cause and effect
+  Route     hero  a line that travels between named stops on a map panel: a place, a journey, a supply chain
   Typed     micro small mono rows typed in: sources, dates, coordinates, a footnote
   Tags      cv    detection labels on the tracked heads: a classifier's (wrong, funny) verdict on people
   Callout   cv    a pulsing point with a leader to a label: name a thing in frame (locked shots)
+  Mark      cv    a hand-drawn circle, box, underline or arrow that draws itself round a thing in frame
 """
 import json
 import math
@@ -105,8 +110,8 @@ def _ease_io(u):
     return u * u * (3 - 2 * u)
 
 
-def _spring(u, k=7.0):
-    """0 -> 1 with one overshoot that settles: for needles and pops."""
+def _spring(u, k=4.5):
+    """0 -> 1 with one overshoot that settles (about 6% past the mark at k=4.5): for needles and pops."""
     u = max(u, 0.0)
     return 1 - math.exp(-k * u) * math.cos(1.6 * math.pi * u)
 
@@ -154,11 +159,99 @@ def _hit(a, b):
     return not (a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1])
 
 
+def _partial(pts, a, b):
+    """The part of the polyline pts between the fractions a and b of its length, and the direction (radians)
+    it is heading in at its end."""
+    seg = [math.dist(p, q) for p, q in zip(pts, pts[1:])]
+    total = sum(seg)
+    if total <= 0 or b <= a:
+        return [], 0.0
+    lo_t, hi_t, out, run, ang = a * total, b * total, [], 0.0, 0.0
+    for (p, q), ln in zip(zip(pts, pts[1:]), seg):
+        lo, hi = max(lo_t, run), min(hi_t, run + ln)
+        if ln > 0 and hi > lo:
+            at = lambda f: (p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f)
+            if not out:
+                out.append(at((lo - run) / ln))
+            out.append(at((hi - run) / ln))
+            ang = math.atan2(q[1] - p[1], q[0] - p[0])
+        run += ln
+    return out, ang
+
+
+def _stroke(img, pts, a, b, width, fill, ss=3):
+    """Draw the part of polyline pts between the fractions a and b of its length onto img, antialiased, with
+    round ends: the draw-on primitive (b rising from 0 to 1 draws the line, a rising after it erases it from
+    its start). Returns (tip, direction) for a dot or an arrowhead on the moving end, or None when nothing
+    is drawn."""
+    part, ang = _partial(pts, max(0.0, a), min(1.0, b))
+    if len(part) < 2:
+        return None
+    pad = width + 2
+    x0 = max(0, int(min(x for x, _ in part) - pad))
+    y0 = max(0, int(min(y for _, y in part) - pad))
+    x1 = min(img.size[0], int(max(x for x, _ in part) + pad) + 1)
+    y1 = min(img.size[1], int(max(y for _, y in part) + pad) + 1)
+    if x1 <= x0 or y1 <= y0:
+        return part[-1], ang
+    m = Image.new("L", ((x1 - x0) * ss, (y1 - y0) * ss), 0)
+    d = ImageDraw.Draw(m)
+    q = [((x - x0) * ss, (y - y0) * ss) for x, y in part]
+    d.line(q, fill=255, width=max(1, int(round(width * ss))), joint="curve")
+    r = width * ss / 2
+    for x, y in (q[0], q[-1]):
+        d.ellipse((x - r, y - r, x + r, y + r), fill=255)
+    m = m.resize((x1 - x0, y1 - y0), Image.LANCZOS)
+    al = fill[3] if len(fill) > 3 else 255
+    if al < 255:
+        m = m.point(lambda v: int(v * al / 255))
+    lay = Image.new("RGBA", m.size, tuple(fill[:3]) + (0,))
+    lay.putalpha(m)
+    img.alpha_composite(lay, (x0, y0))
+    return part[-1], ang
+
+
+def _head(img, tip, ang, size, width, fill):
+    """An arrowhead on a stroke's moving end: two short strokes back from the tip."""
+    for da in (2.6, -2.6):
+        _stroke(img, [tip, (tip[0] + math.cos(ang + da) * size, tip[1] + math.sin(ang + da) * size)], 0.0, 1.0,
+                width, fill)
+
+
+def _round_rect(x0, y0, x1, y1, r, n=6):
+    """Outline of a rounded rectangle as a closed polyline, clockwise from the top edge."""
+    pts = []
+    for cx, cy, a0 in ((x1 - r, y0 + r, -90), (x1 - r, y1 - r, 0), (x0 + r, y1 - r, 90), (x0 + r, y0 + r, 180)):
+        for i in range(n + 1):
+            a = math.radians(a0 + 90 * i / n)
+            pts.append((cx + math.cos(a) * r, cy + math.sin(a) * r))
+    return [(x0 + r, y0)] + pts + [(x0 + r, y0)]
+
+
+def _smooth(pts, n=14):
+    """A Catmull-Rom curve through pts, n samples a leg. Returns the curve and the index of each point in it."""
+    if len(pts) < 3:
+        return list(pts), list(range(len(pts)))
+    ext = [pts[0]] + list(pts) + [pts[-1]]
+    out, at = [], []
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        at.append(len(out))
+        for k in range(n):
+            u = k / n
+            out.append(tuple(0.5 * (2 * p1[j] + (p2[j] - p0[j]) * u + (2 * p0[j] - 5 * p1[j] + 4 * p2[j] - p3[j]) * u * u
+                                    + (3 * p1[j] - p0[j] - 3 * p2[j] + p3[j]) * u ** 3) for j in (0, 1)))
+    at.append(len(out))
+    out.append(tuple(pts[-1]))
+    return out, at
+
+
 # ------------------------------------------------------------------------------------------------ devices
 
 class Device:
     role = "hero"
     W, H = 560, 260        # footprint in 1080p units
+    lead = 0.2             # seconds before t0 that the panel starts rising, so it has settled on the word
 
     def size(self, ov):
         return self.W * ov.s, self.H * ov.s
@@ -194,8 +287,8 @@ class Counter(Device):
                 else:
                     out.append((ch, True, 9))
         else:
-            u = _ease_out(b / max(self.beats, 1e-3))
-            v = self.start + (self.value - self.start) * (1 - (1 - u) ** 2)
+            # one ease-out, so the number is still visibly moving until it lands on the last beat
+            v = self.start + (self.value - self.start) * _ease_out(b / max(self.beats, 1e-3))
             out = [(c, True, 9) for c in self.fmt.format(v)]
         maxw = (self.W - 44) * s - (ov.font(st.mono_bold, 30).getlength(self.unit) + 12 * s if self.unit else 0)
         fnt = ov.fit(st.display, 96, final, 0, maxw)
@@ -303,12 +396,13 @@ class Chart(Device):
             pts = [(X(i), Y(v)) for i, v in enumerate(self.points[:shown])]
             if shown < n and pts:   # the line reaches toward the next point inside the beat
                 nx, ny = X(shown), Y(self.points[shown])
-                e = _ease_out(frac)
+                e = min(max(frac, 0.0), 1.0)   # steady inside the beat: the line doesn't stall at each point
                 pts.append((pts[-1][0] + (nx - pts[-1][0]) * e, pts[-1][1] + (ny - pts[-1][1]) * e))
             if self.kind == "area" and len(pts) > 1:
                 d.polygon(pts + [(pts[-1][0], yb), (pts[0][0], yb)], fill=_rgba(st.accent, 70))
             if len(pts) > 1:
-                d.line(pts, fill=_rgba(st.accent), width=max(2, int(4 * s)), joint="curve")
+                _stroke(tl, pts, 0.0, 1.0, max(2, 4 * s), _rgba(st.accent))
+                d = ImageDraw.Draw(tl)
         d.line([(x0, yb), (x1, yb)], fill=_rgba(st.muted), width=max(1, int(2 * s)))
         if self.xlabels:
             fm = ov.font(st.mono, 17)
@@ -613,6 +707,8 @@ class Stamp(Device):
         tl.alpha_composite(rot, (int((tl.size[0] - rot.size[0]) / 2), int((tl.size[1] - rot.size[1]) / 2)))
         return tl
 
+    lead = 0.0   # a stamp lands on its beat; nothing of it shows before
+
     def panel(self):
         return False
 
@@ -648,6 +744,140 @@ class Strike(Device):
                 d.text((22 * s, yo + fn.size * 1.05), self.new, font=fn, fill=_rgba(st.accent), anchor="ls")
             else:
                 d.text(((self.W - 22) * s, yo), self.new, font=fn, fill=_rgba(st.accent), anchor="rs")
+        return tl
+
+
+class Flow(Device):
+    """A mechanism as boxes joined by arrows, left to right: nodes are strings or (title, sub) pairs, two to
+    five of them. One node lands every `per` beats: its outline draws on over half a beat, the fill follows,
+    then the arrow draws out of it and reaches the next node on that node's beat. The active node (default
+    the last, the outcome) fills with the accent once it has landed. note is a mono line under the row."""
+    W = 720
+
+    def __init__(self, label, nodes, per=1.0, active=-1, note=None):
+        self.label, self.per, self.note = label, per, note
+        self.nodes = [n if isinstance(n, (tuple, list)) else (n, None) for n in nodes][:5]
+        self.active = active % len(self.nodes)
+        self.sub = any(sb for _, sb in self.nodes)
+        self.H = 66 + (104 if self.sub else 84) + (48 if note else 22)
+
+    def tile(self, ov, st, t, t0, t1):
+        s = ov.s
+        tl = _tile(self.W * s, self.H * s)
+        y0 = _panel(ov, st, tl, self.label)
+        n = len(self.nodes)
+        gap = 44 * s
+        nw = ((self.W - 44) * s - gap * (n - 1)) / n
+        nh = (88 if self.sub else 68) * s
+        b = _beats(t, t0)
+        lw = max(2, 3 * s)
+        for i, (title, sb) in enumerate(self.nodes):
+            u = (b - i * self.per) / 0.5          # this node's outline, 0..1 over half a beat
+            x = 22 * s + i * (nw + gap)
+            box = (x, y0 + 4 * s, x + nw, y0 + 4 * s + nh)
+            if u > 0:
+                fa = _ease_out((u - 0.5) / 0.7)   # the fill follows the outline
+                hot = i == self.active
+                if fa > 0:
+                    lay = _tile(*tl.size)
+                    ImageDraw.Draw(lay).rounded_rectangle(box, int(12 * s), fill=_rgba(st.accent if hot else st.rim,
+                                                                                       (255 if hot else 110) * fa))
+                    tl.alpha_composite(lay)
+                _stroke(tl, _round_rect(*box, 12 * s), 0.0, min(1.0, u), lw, _rgba(st.accent if hot or u < 1 else st.rim))
+                ta = _ease_out((u - 0.6) / 0.6)
+                if ta > 0:
+                    d = ImageDraw.Draw(tl)
+                    col = st.ink if hot else st.text
+                    ft = ov.fit(st.bold, 28, title, 0, nw - 20 * s)
+                    cy = (box[1] + box[3]) / 2 - (12 * s if sb else 0)
+                    d.text((x + nw / 2, cy), title, font=ft, fill=_rgba(col, 255 * ta), anchor="mm")
+                    if sb:
+                        fs = ov.fit(st.mono, 18, sb, 0, nw - 16 * s)
+                        d.text((x + nw / 2, cy + 30 * s), sb, font=fs, fill=_rgba(col if hot else st.muted, 255 * ta),
+                               anchor="mm")
+            if i < n - 1:                         # the arrow leaves when the outline closes, arrives on the next beat
+                v = (b - i * self.per - 0.5) / max(self.per - 0.5, 0.25)
+                if v > 0:
+                    ym = (box[1] + box[3]) / 2
+                    got = _stroke(tl, [(box[2] + 7 * s, ym), (box[2] + gap - 9 * s, ym)], 0.0, min(1.0, v), lw,
+                                  _rgba(st.accent))
+                    if got:
+                        _head(tl, got[0], got[1], 11 * s, lw, _rgba(st.accent))
+        if self.note:
+            ImageDraw.Draw(tl).text((22 * s, (self.H - 24) * s), self.note, font=ov.font(st.mono, 20),
+                                    fill=_rgba(st.muted), anchor="ls")
+        return tl
+
+
+class Route(Device):
+    """A place as a route on a map panel: stops are (name, (x, y)) with x, y in 0..1 of the map area (y down),
+    or names alone, laid out left to right. The line leaves the first stop on t0 and reaches one stop every
+    `per` beats with a dot riding its end; each stop's marker and name appear as the line arrives. Once it
+    has arrived, a pulse of light runs the route again every two bars. note is a mono line under the map
+    (coordinates, a distance, a date)."""
+    W = 640
+
+    def __init__(self, label, stops, per=1.0, note=None):
+        self.label, self.per, self.note = label, per, note
+        n = len(stops)
+        self.stops = []
+        for i, sp in enumerate(stops):
+            if isinstance(sp, str):
+                sp = (sp, (0.08 + 0.84 * i / max(n - 1, 1), 0.68 - 0.36 * (i % 2) if n > 2 else 0.62 - 0.24 * i))
+            self.stops.append(sp)
+        self.H = 66 + 260 + (48 if note else 20)
+
+    def tile(self, ov, st, t, t0, t1):
+        s = ov.s
+        tl = _tile(self.W * s, self.H * s)
+        y0 = _panel(ov, st, tl, self.label)
+        d = ImageDraw.Draw(tl)
+        mx0, mx1, my0, my1 = 34 * s, (self.W - 34) * s, y0 + 34 * s, y0 + 226 * s
+        for g in range(7):                      # a faint graticule, so the panel reads as a map
+            gx = 22 * s + ((self.W - 44) * s) * g / 6
+            d.line([(gx, y0), (gx, y0 + 256 * s)], fill=_rgba(st.rim, 60), width=1)
+        for g in range(5):
+            gy = y0 + 256 * s * g / 4
+            d.line([(22 * s, gy), ((self.W - 22) * s, gy)], fill=_rgba(st.rim, 60), width=1)
+        pts = [(mx0 + (mx1 - mx0) * x, my0 + (my1 - my0) * y) for _, (x, y) in self.stops]
+        curve, at = _smooth(pts)
+        seg = [math.dist(p, q) for p, q in zip(curve, curve[1:])]
+        cum = [0.0]
+        for ln in seg:
+            cum.append(cum[-1] + ln)
+        total = max(cum[-1], 1e-6)
+        b = _beats(t, t0) / self.per
+        legs = len(pts) - 1
+        k = min(max(int(b), 0), legs - 1) if legs else 0
+        u = min(max(b - k, 0.0), 1.0) if b < legs else 1.0
+        frac = (cum[at[k]] + (cum[at[k + 1]] - cum[at[k]]) * u) / total if legs and b > 0 else 0.0
+        lw = max(3, 5 * s)
+        got = _stroke(tl, curve, 0.0, frac, lw, _rgba(st.accent))
+        if b >= legs and legs:                  # arrived: a pulse runs the route again every two bars
+            ph = ((b - legs) * self.per % 8.0) / 2.0
+            if ph < 1.3:
+                _stroke(tl, curve, ph - 0.3, ph, lw, _rgba(st.text))
+        d = ImageDraw.Draw(tl)
+        fm = ov.font(st.mono_bold, 20)
+        for i, (name, _) in enumerate(self.stops):
+            since = b - i
+            if since < 0:
+                break
+            px, py = pts[i]
+            r = (7 + 5 * math.exp(-since * 3)) * s
+            d.ellipse((px - r, py - r, px + r, py + r), fill=_rgba(st.panel[:3]), outline=_rgba(st.accent),
+                      width=max(2, int(3 * s)))
+            tw = fm.getlength(name)
+            lx = min(max(px - tw / 2, 24 * s), (self.W - 24) * s - tw)
+            ly = py + 26 * s if py < (my0 + my1) / 2 else py - 26 * s
+            a = _ease_out(since / 0.4)
+            d.text((lx, ly), name, font=fm, fill=_rgba(st.text, 255 * a), anchor="lm",
+                   stroke_width=max(2, int(3 * s)), stroke_fill=_rgba(st.panel[:3], 255 * a))
+        if got and 0 < b < legs:                # the dot riding the moving end
+            (tx, ty), _ = got
+            d.ellipse((tx - 9 * s, ty - 9 * s, tx + 9 * s, ty + 9 * s), fill=_rgba(st.text))
+        if self.note:
+            d.text((22 * s, (self.H - 24) * s), self.note, font=ov.font(st.mono, 20), fill=_rgba(st.muted), anchor="ls")
         return tl
 
 
@@ -701,6 +931,7 @@ class Typed(Device):
     """Micro type: up to three short mono rows typed in fast (a character per 64th), no panel: sources,
     dates, coordinates, a footnote. Light type with a dark outline so it reads on any shot."""
     role = "micro"
+    lead = 0.0
 
     def __init__(self, rows, size=22):
         self.rows, self.fs = list(rows)[:3], size
@@ -817,11 +1048,14 @@ class Callout(Device):
         cx = x0 if x0 > px else x0 + tw * k
         line = [(px, py), (cx, yc)]
         crosses = any(_hit((min(px, cx), min(py, yc), max(px, cx), max(py, yc)), r) for r in ov.heads(t, pad=False))
+        grow = _ease_out((t - t0) / 0.25)   # the leader draws out of the point, then the chip opens on its end
         if not crosses:
-            d.line(line, fill=_rgba(st.accent, 230 * a), width=max(2, int(3 * s)))
+            _stroke(lay, line, 0.0, grow, max(2, 3 * s), _rgba(st.accent, 230 * a))
+            d = ImageDraw.Draw(lay)
+        a *= _ease_out((t - t0 - 0.12) / 0.18)
         box = (x0, yc - th * k / 2, x0 + tw * k, yc + th * k / 2)
         d.rectangle(box, fill=_rgba(st.panel[:3], st.panel[3] * a), outline=_rgba(st.accent, 255 * a), width=max(1, int(2 * s)))
-        n = int(len(self.text) * min(1.0, (t - t0) / 0.3 + 0.1))
+        n = int(len(self.text) * min(1.0, max(0.0, t - t0 - 0.12) / 0.3 + 0.1))
         d.text((x0 + 15 * s * k, box[1] + 26 * s * k), self.text[:n], font=ov.font(st.bold, 28 * k),
                fill=_rgba(st.text, 255 * a), anchor="lm")
         for i, r in enumerate(self.rows):
@@ -829,6 +1063,85 @@ class Callout(Device):
                    fill=_rgba(st.muted, 255 * a), anchor="lm")
         img.alpha_composite(lay)
         avoid.append(box)
+
+
+class Mark(Device):
+    """A hand-drawn mark that draws itself round a thing in the frame: kind "circle", "box", "underline" or
+    "arrow". xy is the thing's centre and size its (width, height), all in 0..1 of the frame; for a locked or
+    slow shot, like Callout. The stroke draws on over `beats` beats from t0, holds with a slow boil (three
+    drawings of the same line, changing every third frame, like ink animated on threes), and is taken back
+    from its start as it leaves. text is a short label outside the mark. An arrow points at xy from the side
+    given by `side` ("left", "right", "above", "below"). Nothing is drawn on a frame where it would touch a
+    face."""
+    role = "cv"
+
+    def __init__(self, xy, size=(0.12, 0.12), kind="circle", text=None, beats=0.5, side="right", boil=True,
+                 color=None):
+        self.xy, self.size, self.kind, self.text = xy, size, kind, text
+        self.beats, self.side, self.boil, self.color = beats, side, boil, color
+
+    def _path(self, ov, k):
+        s = ov.s
+        cx, cy = self.xy[0] * ov.w, self.xy[1] * ov.h
+        rx, ry = self.size[0] * ov.w / 2, self.size[1] * ov.h / 2
+        j = lambda i: (hash01("mark", self.xy, k, i) - 0.5) * 2 * 3.0 * s   # the hand: a few px of wobble
+        if self.kind == "circle":           # a loop that overshoots its start, a little off-round
+            return [(cx + math.cos(a) * rx * (1.05 - 0.07 * i / 52) + j(i // 4),
+                     cy + math.sin(a) * ry * (1.05 - 0.07 * i / 52) + j(i // 4 + 99))
+                    for i in range(53) for a in [math.radians(-110 + 400 * i / 52)]]
+        if self.kind == "box":
+            c = [(cx - rx, cy - ry), (cx + rx, cy - ry), (cx + rx, cy + ry), (cx - rx, cy + ry), (cx - rx, cy - ry - 8 * s)]
+            return [(x + j(i), y + j(i + 50)) for i, (x, y) in enumerate(c)]
+        if self.kind == "underline":
+            return [(cx - rx + 2 * rx * i / 8 + j(i), cy + ry + 6 * s + j(i + 50) * 0.6) for i in range(9)]
+        dx, dy = {"left": (-1, 0), "right": (1, 0), "above": (0, -1), "below": (0, 1)}[self.side]
+        far = (cx + dx * (rx + 150 * s), cy + dy * (ry + 150 * s))
+        near = (cx + dx * (rx + 12 * s), cy + dy * (ry + 12 * s))
+        mid = ((far[0] + near[0]) / 2 + dy * 26 * s + j(1), (far[1] + near[1]) / 2 - dx * 26 * s + j(2))
+        return _smooth([far, mid, near], 8)[0]
+
+    def draw_frame(self, ov, st, img, t, t0, t1, avoid):
+        s = ov.s
+        pts = self._path(ov, int(t * 24) // 3 % 3 if self.boil else 0)
+        xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+        w = 6 * s
+        rect = (min(xs) - w, min(ys) - w, max(xs) + w, max(ys) + w)
+        if self.kind in ("circle", "box"):   # a ring: only its band can touch a face, not what it surrounds
+            band = [(rect[0], rect[1], rect[2], rect[1] + 3 * w), (rect[0], rect[3] - 3 * w, rect[2], rect[3]),
+                    (rect[0], rect[1], rect[0] + 3 * w, rect[3]), (rect[2] - 3 * w, rect[1], rect[2], rect[3])]
+        else:
+            band = [rect]
+        heads = ov.heads(t, pad=False)
+        if any(_hit(r, h) for r in band for h in heads):
+            return
+        on = _ease_io(_beats(t, t0) / max(self.beats, 1e-3))
+        off = _ease_io(1 - (t1 - t) / 0.25)
+        if on <= 0 or off >= 1:
+            return
+        col = self.color or st.accent
+        lay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        _stroke(lay, pts, off, on, w + 5 * s, _rgba(st.ink, 235))   # a dark edge holds it on any picture
+        got = _stroke(lay, pts, off, on, w, _rgba(col))
+        if self.kind == "arrow" and got and on > 0.85:
+            _head(lay, got[0], got[1], 26 * s, w + 5 * s, _rgba(st.ink, 235))
+            _head(lay, got[0], got[1], 26 * s, w, _rgba(col))
+        if self.text and on >= 1:
+            f = ov.font(st.bold, 34)
+            tw = f.getlength(self.text)
+            if self.kind == "arrow":
+                tx, ty = pts[0][0] - tw / 2, pts[0][1] + (-34 * s if self.side != "above" else -40 * s)
+            else:
+                tx, ty = (rect[0] + rect[2] - tw) / 2, rect[3] + 30 * s
+                if ty > 0.9 * ov.h:
+                    ty = rect[1] - 30 * s
+            tx = min(max(tx, 0.04 * ov.w), 0.96 * ov.w - tw)
+            box = (tx - 6 * s, ty - 24 * s, tx + tw + 6 * s, ty + 24 * s)
+            if not any(_hit(box, h) for h in ov.heads(t)) and not any(_hit(box, r) for r in avoid):
+                a = _ease_out((_beats(t, t0) - self.beats) / 0.5) * (1 - off)
+                ImageDraw.Draw(lay).text((tx, ty), self.text, font=f, fill=_rgba(st.text, 255 * a), anchor="lm",
+                                         stroke_width=max(2, int(4 * s)), stroke_fill=_rgba(st.ink, 255 * a))
+                avoid.append(box)
+        img.alpha_composite(lay)
 
 
 # ------------------------------------------------------------------------------------------------ plan
@@ -842,21 +1155,25 @@ class Plan:
         self.items = []
         self._warned = False
 
-    def add(self, dev, t0, dur, prefer=0.3, xs=None):
+    def add(self, dev, t0, dur, prefer=0.3, xs=None, lead=None):
         """Show dev from t0 for dur seconds. prefer: the centre line wanted (fraction of the height); xs: left
-        edges to try as fractions of the width (default: left margin, centre, right margin)."""
+        edges to try as fractions of the width (default: left margin, centre, right margin). lead: seconds
+        before t0 that a panel starts rising (default the device's own, 0.2 s for panels), so it has settled
+        when the word is sung; what the device shows starts moving on t0."""
         if dur < 1.2 and not self._warned:
             print(f"devices: {type(dev).__name__} at {t0:.2f}s is on screen {dur:.2f}s; give a graphic at least "
                   f"1.2 s to read")
             self._warned = True
-        self.items.append({"dev": dev, "t0": t0, "t1": t0 + dur, "prefer": prefer, "xs": xs, "id": len(self.items)})
+        lead = (0.0 if dev.role == "cv" else dev.lead) if lead is None else lead
+        self.items.append({"dev": dev, "t0": t0, "t1": t0 + dur, "prefer": prefer, "xs": xs, "id": len(self.items),
+                           "show": max(0.0, t0 - lead)})
         return dev
 
     def starts(self):
-        return sorted({it["t0"] for it in self.items})
+        return sorted({it["show"] for it in self.items})
 
     def active(self, t):
-        on = [it for it in self.items if it["t0"] <= t < it["t1"]]
+        on = [it for it in self.items if it["show"] <= t < it["t1"]]
         keep = []
         for role, n in self.BUDGET.items():
             mine = sorted((it for it in on if it["dev"].role == role), key=lambda it: it["t0"])
@@ -882,15 +1199,16 @@ class Plan:
             bw, bh = dev.size(ov)
             lift = 36 * ov.s
             xs = [f * ov.w for f in it["xs"]] if it["xs"] else [0.06 * ov.w, (ov.w - bw) / 2, 0.94 * ov.w - bw]
-            x, yc, k = ov.place(("dev", it["id"]), it["t0"], it["t1"], bw, bh + lift, xs, it["prefer"], t=t,
+            x, yc, k = ov.place(("dev", it["id"]), it["show"], it["t1"], bw, bh + lift, xs, it["prefer"], t=t,
                                 extra=tuple(taken))
             rect = (x, yc - bh * k / 2, x + bw * k, yc + bh * k / 2)
             if ov.touches_face(rect, t):
                 continue
-            tl = dev.tile(ov, st, t, it["t0"], it["t1"])
+            tl = dev.tile(ov, st, max(t, it["t0"]), it["t0"], it["t1"])
             if k < 1.0:
                 tl = tl.resize((max(1, int(tl.size[0] * k)), max(1, int(tl.size[1] * k))), Image.LANCZOS)
-            a_in = _ease_out((t - it["t0"]) / 0.22)
+            rise = it["t0"] - it["show"]
+            a_in = _ease_out((t - it["show"]) / (rise if rise >= 0.12 else 0.22))
             a = a_in * min(1.0, (it["t1"] - t) / 0.15)
             dy = (1 - a_in) * lift
             if a < 0.999:
