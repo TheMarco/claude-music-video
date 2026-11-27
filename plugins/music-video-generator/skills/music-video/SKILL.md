@@ -30,7 +30,7 @@ user installs them once per engine version into `~/.claude/music-video/engine/<c
 
 ```bash
 SKILL="<base directory>"
-ENGINE_REV=73dc5ac7151ee7bb36d299a6d212f9048d43a789
+ENGINE_REV=eb54b0f4a219a4eb763bda804367d085b7626c8c
 ENGINE="$HOME/.claude/music-video/engine/$ENGINE_REV"
 ```
 
@@ -38,7 +38,7 @@ Shell variables don't carry over from one command to the next. Start every comma
 `$ENGINE` or `$ENGINE_REV` with these three lines.
 
 **Check for the engine before anything else:** `test -f "$ENGINE/template/mv/scripts/render.py"`. When
-it is missing, stop. Tell the user this skill needs engine version `73dc5ac`, give them
+it is missing, stop. Tell the user this skill needs engine version `eb54b0f`, give them
 https://github.com/TheMarco/claude-music-video#install-the-engine, and wait for them to say it is
 installed. They run those steps themselves: don't download or install the engine for them, and don't
 fall back to an older engine folder that happens to be there. Then check again and go on. The template in it (`$ENGINE/template/mv/scripts/`) is a working pipeline. Copy it
@@ -238,7 +238,7 @@ moments with both and compare before changing anything else. A project from befo
 `render.py` and `media.py` for vertical footage sets `SEG_SIZE` in its `look.py` instead. A project
 from before engine 56021ac gains `screen.py` and renders as before; one that baked a screen into copies of
 a clip can drop those copies and use `screen=` in `edl.py` with `SCREENS` in `fx.py`. A project from
-before engine 73dc5ac gains `fonts.py` and `readcheck.py`, and its device panels now start rising 0.2 s
+before engine eb54b0f gains `fonts.py`, `readcheck.py` and `particles.py`, and its device panels now start rising 0.2 s
 before their time so they have settled on the word: check stills where a panel sits close to a cut.
 
 ## Phase 2: the song
@@ -526,7 +526,8 @@ dissolves in old films carry a ghost of the next shot for a second or more.
 
 **Build the concept.** `look.py`: the `FINISH` (from a start), on top of the palettes and grades written
 for the edit. `fx.py`: overlays
-(`draw_front`, `draw_behind`), the explaining graphics from the line table through a `devices.Plan`,
+(`draw_front`, `draw_behind`), particles that live in the shot (`PARTICLES`, `particles.py`), the
+explaining graphics from the line table through a `devices.Plan`,
 the depth treatments as `depth_fx` on their shots in `edl.py`, shaders (`GLSL_COMP` with the person
 matte and `DEPTH`, `GLSL_FINAL`) for matte
 tricks, light and accents, and per-frame uniforms from the audio and song position (they can also drive

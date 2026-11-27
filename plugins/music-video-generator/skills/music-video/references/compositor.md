@@ -13,6 +13,8 @@
 - Contrast
 - Reading
 - Explaining graphics (devices.py)
+- Glass
+- Particles (particles.py)
 - Shaders and uniforms (fx.py)
 - Depth (make_depth.py)
 - Screens in the shot (screen.py)
@@ -41,10 +43,13 @@ graphic, title and overlay is designed per video in `look.py` and `fx.py`.
    depth treatment ("Depth"), then `fxComp` (with the person matte and `DEPTH`), echo and trail feedback
    from the previous frame, glitch. The person matte travels in the alpha channel, together with the
    shot's `behind_depth` key.
-3. **Pass 2.** Letterbox bars (if `look.py` asks for them), then the `behind` layer where the person
-   matte is empty, then the `front` layer over everything. Both layers come from `fx.py`.
-4. **Bloom.** Bright pass, then two blur levels.
-5. **Final.** Punch-in, shockwave, chromatic aberration, sharpening, bloom and halation, star glints, flash, invert,
+3. **Particles.** `fx.PARTICLES` drawn into their own layer, each hidden where the scene is nearer than
+   it is ("Particles").
+4. **Pass 2.** The particle layer, letterbox bars (if `look.py` asks for them), then the `behind` layer
+   where the person matte is empty, glass under the frame's glass mask ("Glass"), then the `front` layer
+   over everything. The layers and the mask come from `fx.py`.
+5. **Bloom.** Bright pass, then two blur levels.
+6. **Final.** Punch-in, shockwave, chromatic aberration, sharpening, bloom and halation, star glints, flash, invert,
    `fxFinal`, vignette, scanlines, film grain, fade-in. The amounts come from `FINISH` in `look.py`.
 
 Output is H.264 CRF 19 `-preset slow` with the song as AAC 320k. `--stills` renders JPEG frames
@@ -356,12 +361,14 @@ and returns the rects it took. Lay it out with the video's own blocks: in the la
 | `Redact` | hero | a secret; a reveal later | label, lines with [hidden] words, lift (time) |
 | `Flow` | hero | a mechanism, a pipeline, cause and effect | label, nodes (text or (title, sub), 2-5), per (beats a node), active, note |
 | `Route` | hero | a place, a journey, a supply chain | label, stops (names, or (name, (x, y)) in 0..1 of the map), per (beats a leg), note |
+| `Sticker` | sticker | the thing a line names, cut out of the video's own footage; a collection that grows | src, at (s in the source), box (0..1 of the frame), size, angle, label, image |
 | `Typed` | micro | sources, dates, coordinates, a footnote | rows (up to 3) |
 | `Tags` | cv | a classifier's verdict on the people in frame | label(i, box) -> text or None |
 | `Callout` | cv | a named thing in frame (locked shots) | xy (0..1), text, rows |
 | `Mark` | cv | this one, here: a hand-drawn circle, box, underline or arrow round a thing in frame (locked shots) | xy, size (0..1), kind, text, beats, side (arrow) |
 
-The budget per frame is one hero, two cv marks and two micro rows; when more are on, the newest wins.
+The budget per frame is one hero, two cv marks, two micro rows and three stickers; when more are on, the
+newest wins.
 Every device animates in beats from its start (`timing.beat_at`) and rises in and fades out; give each at
 least about 1.5 s (Plan warns under 1.2 s). A panel starts rising 0.2 s before its time and has settled
 when the word is sung, and what it shows starts moving on the word; `Plan.add(..., lead=0)` puts the
@@ -374,6 +381,16 @@ third frame, and is taken back from its start as it leaves. Panels are dark glas
 a group, a chip with a leader line above each head, so nothing lands inside a head box even where the
 detector merged two heads; `Callout` drops its leader where it would cross a face.
 
+`Sticker` cuts its thing out with OpenCV's GrabCut inside the box you give (no model to fetch), keeps the
+cut-out in `mv/work/stickers/`, and adds a white die-cut edge, a shadow and a slight tilt; it drops
+onto the picture in a sixteenth on its beat. Read the box off a contact sheet and look at the first
+still: a thing that stands apart from its background cuts cleanly (a person, a sign, a car), a thing
+the same tone as what is behind it does not, and the device then says so and uses the box itself, which
+reads as a photo stuck on. Tighten the box, pick a frame where the thing is clearer, or pass
+`image="file.png"` with its own transparency. The cut-out is the ungraded source; when it looks foreign
+next to the graded shot, cut it from a still of the render instead (`image=`). Stickers that collect
+across a line each get their own start and the same end.
+
 A new device subclasses `Device`: set `role`, `W`, `H` (1080p units) and write `tile(ov, st, t, t0, t1)`
 returning an RGBA image of that size (`_panel` draws the shared panel and header; `_stroke(img, pts, a,
 b, width, fill)` draws the part of a polyline between the fractions a and b of its length, antialiased,
@@ -381,6 +398,62 @@ and returns its moving end and direction for a dot or an arrowhead: every line t
 itself goes through it), or, for marks
 anchored to the frame, `draw_frame(ov, st, img, t, t0, t1, avoid)`. Keep it in the video's `fx.py`; a
 device that more than one video would use belongs in the engine.
+
+## Glass
+
+`DV.Style(..., glass=True)` turns every device panel into frosted glass: under the panel the compositor
+blurs the footage, lifts its colour a little, bends it at the rim and lights the edge, and the panel's
+own fill becomes a tint over that (176 of 255 on a dark style, dark enough that its type passes
+`contrastcheck.py`; a `panel=` colour of your own wants an alpha near that). Cards then take the colour
+of each shot they sit on instead of looking the same everywhere. It is a choice per video, like the
+accent: flat panels suit a printed or terminal world, glass an interface, a windscreen, a visor.
+
+For a card of your own, `ov.add_glass(rect, radius, amount, t=t)` adds a rounded rect of glass under
+what you then draw over it; pass the time you are drawing for, so a layout pass that draws other
+times on a scratch image adds nothing. `ov.glass_draw()` is an ImageDraw on the frame's glass mask
+(mode L, 255 full glass) for any other shape: a word drawn there in a heavy face, with a thin light
+outline of the same word in the front layer, is a word made of glass that the footage shows through.
+The contrast check sees only the front layer, so give a glass word that outline, and keep glass off
+faces like everything else (`ov.place`, `ov.touches_face`).
+
+## Particles (particles.py)
+
+Particles that live in the shot rather than on the lens: `PARTICLES` in `fx.py` is a list of
+`particles.Emitter`, or a function `(t, a)` returning one, to change them by section.
+
+```python
+import particles as PT
+PARTICLES = [PT.Emitter(count=260, area=(0.0, 1.0, 1.0, 1.06), vel=(0.0, -0.16), spread=(0.03, 0.05),
+                        turb=0.035, life=(3.0, 6.0), size=(3, 9), color=(1.0, 0.55, 0.2), end=(1.0, 0.2, 0.05),
+                        gain=lambda t, a: 0.0 if a["kick_level"] < 0.3 else 0.4 + 1.2 * a["hat"])]
+```
+
+Every particle has a depth (`z=(far, near)`, spread over the whole scene by default). On a shot with a
+depth map it is hidden wherever the scene is nearer, so an ember rises behind the tower and in front of
+the crowd; on a shot with only a person matte, particles further than `person` (0.6) pass behind the
+person; on a plain shot they all show. Far ones are smaller and dimmer. They are drawn over the footage
+and under every word and card, they fade out toward every head box, and they take the bloom and grain
+like the footage. `make_depth.py` on the wides they cross is what makes them sit in the place.
+
+| Parameter | What it sets |
+|---|---|
+| `count` | particles alive at any time (or per burst). A few hundred is weather, a few thousand is fog. |
+| `area` | where they are born, `(x0, y0, x1, y1)` in 0..1 of the frame, y down; outside the frame is fine (a strip under the bottom for embers, above the top for snow) |
+| `vel`, `spread` | birth velocity in frame heights per second, and its random part |
+| `gravity`, `drag` | pull downward (snow 0.02, sparks 0.6), and how fast the birth velocity dies (sparks 1.5) |
+| `turb`, `turb_rate` | how far the air pushes them about (frame heights) and how fast it changes (0.25 a drift, 1.0 a flutter) |
+| `life` | shortest and longest life in seconds; each fades in and out |
+| `size` | smallest and largest radius in 1080p pixels at depth 1 |
+| `color`, `end`, `alpha` | colour at birth and at death, overall strength |
+| `stretch` | 0 round; above 0 they stretch along their motion (rain 6, sparks 2) |
+| `blend` | `"add"` for light (embers, sparks, dust in a beam), `"alpha"` for matter (snow, ash, petals, confetti) |
+| `burst` | a list of song times: `count` particles born at each (a drop, a snare), instead of a steady stream |
+| `gain` | a function `(t, a)` giving brightness from the audio or the section; 0 switches the emitter off |
+
+A particle's path is a formula of its age, so stills, part renders and the full render show the same
+particles. `--clean` renders (the frames the head tracker and the contrast check read) leave them out.
+One kind of particle per video, taken from the song's world, usually quiet in the calm sections; they
+are an overlay like any other, and at the brightness of the test that proved them they were too much.
 
 ## Shaders and uniforms (fx.py)
 

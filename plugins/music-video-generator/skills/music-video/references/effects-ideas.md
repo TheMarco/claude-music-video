@@ -40,7 +40,8 @@ questions, in order, and stop at the first that gives a picture:
 2. Is the joke about an interface? Draw that interface: a terminal, a chat, a poll, a status card.
 3. Is there an object or a person in frame that can carry it? Label it, measure it, classify it (a
    detection tag with a wrong or funny class, a callout on the thing, a hand-drawn circle or arrow
-   that draws itself round it: `Mark`).
+   that draws itself round it: `Mark`; the thing itself cut out of the footage and stuck on as a
+   sticker, kept and collected: `Sticker`).
 4. Does it describe a mechanism? A diagram of it, a flow (`Flow`: boxes and arrows that draw on a node a
    beat), a plan view.
 5. Does it name a place? A map, coordinates, a route (`Route`: a line travelling between named stops).
@@ -113,6 +114,8 @@ Where each kind goes in the engine (`references/compositor.md`):
   composited picture (`tComp`) adds the bloom textures (`tB1`, `tB2`) back itself.
 - `draw_behind` and `draw_front`: shapes behind and in front of the person; everything in front goes
   through `ov.place` against the heads.
+- `PARTICLES` (`particles.py`): weather and sparks at a depth in the scene. The glass mask
+  (`Style(glass=True)`, `ov.add_glass`, `ov.glass_draw`): cards and words the footage shows through.
 - The EDL's `echo`, `trail` and `glitch` per shot: afterimages, smears and tears.
 
 ## Overlays (draw_front / draw_behind, or additive light in fxFinal)
@@ -120,8 +123,9 @@ Where each kind goes in the engine (`references/compositor.md`):
 Light: light leaks drifting across on phrase starts, lens flares anchored to bright sources, beams
 sweeping through the builds, light streaks racing across on the hats, a glow that swells with the bass.
 
-Particles and materials: one thing from the lyrics or theme drifting over the footage (ash, embers,
-sparks, snow, glitter, petals, dust motes), smoke in the lower third lit by the kick, water running down
+Particles and materials: one thing from the lyrics or theme drifting through the footage (ash, embers,
+sparks, snow, glitter, petals, dust motes; `particles.py` puts each at a depth in the scene, so it
+passes behind the person and the buildings instead of lying on the lens), smoke in the lower third lit by the kick, water running down
 the lens, thin cracks spreading from a corner on hits.
 
 Marks: one small symbol or shape from the song that returns at key moments, changed each time; a
